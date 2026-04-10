@@ -77,7 +77,7 @@ const menuGroups = [
   },
   {
     label: 'Administração',
-    modulo: 'administracao',
+    modulo: 'admin',
     items: [
       { title: 'Empresas', url: '/admin/empresas', icon: Building2, funcionalidade: 'empresas' },
       { title: 'Usuários', url: '/admin/usuarios', icon: Users, funcionalidade: 'usuarios' },
