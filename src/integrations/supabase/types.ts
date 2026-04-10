@@ -346,6 +346,53 @@ export type Database = {
           },
         ]
       }
+      metas_financeiras: {
+        Row: {
+          categoria: string
+          created_at: string
+          descricao: string | null
+          empresa_id: string
+          id: string
+          periodo_fim: string
+          periodo_inicio: string
+          tipo: string
+          updated_at: string
+          valor_meta: number
+        }
+        Insert: {
+          categoria: string
+          created_at?: string
+          descricao?: string | null
+          empresa_id: string
+          id?: string
+          periodo_fim: string
+          periodo_inicio: string
+          tipo: string
+          updated_at?: string
+          valor_meta: number
+        }
+        Update: {
+          categoria?: string
+          created_at?: string
+          descricao?: string | null
+          empresa_id?: string
+          id?: string
+          periodo_fim?: string
+          periodo_inicio?: string
+          tipo?: string
+          updated_at?: string
+          valor_meta?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metas_financeiras_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       obras: {
         Row: {
           contratante: string | null
@@ -883,6 +930,64 @@ export type Database = {
             columns: ["obra_id"]
             isOneToOne: false
             referencedRelation: "obras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transferencias: {
+        Row: {
+          conta_destino_id: string
+          conta_origem_id: string
+          created_at: string
+          data: string
+          descricao: string | null
+          empresa_id: string
+          id: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          conta_destino_id: string
+          conta_origem_id: string
+          created_at?: string
+          data?: string
+          descricao?: string | null
+          empresa_id: string
+          id?: string
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          conta_destino_id?: string
+          conta_origem_id?: string
+          created_at?: string
+          data?: string
+          descricao?: string | null
+          empresa_id?: string
+          id?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transferencias_conta_destino_id_fkey"
+            columns: ["conta_destino_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transferencias_conta_origem_id_fkey"
+            columns: ["conta_origem_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transferencias_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
             referencedColumns: ["id"]
           },
         ]
