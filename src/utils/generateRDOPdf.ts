@@ -696,7 +696,7 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
     },
     styles,
     content,
-    footer: (currentPage: number, pageCount: number) => {
+    footer: (currentPage: number, pageCount: number): any => {
       const statusFooterLabel = isAprovado ? 'Aprovado' : isPendente ? 'Pendente' : 'Rascunho';
       return {
         stack: [
