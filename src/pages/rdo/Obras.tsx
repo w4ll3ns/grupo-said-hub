@@ -19,13 +19,13 @@ import { format, differenceInDays } from 'date-fns';
 const schema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
   endereco: z.string().optional().or(z.literal('')),
-  responsavel: z.string().optional().or(z.literal('')),
+  responsavel: z.string().min(1, 'Responsável é obrigatório'),
   contrato: z.string().optional().or(z.literal('')),
   contratante: z.string().optional().or(z.literal('')),
   local: z.string().optional().or(z.literal('')),
-  prazo_contratual_dias: z.string().optional().or(z.literal('')),
+  prazo_contratual_dias: z.string().min(1, 'Prazo contratual é obrigatório'),
   status: z.string().default('em_andamento'),
-  data_inicio: z.string().optional().or(z.literal('')),
+  data_inicio: z.string().min(1, 'Data de início é obrigatória'),
   data_previsao: z.string().optional().or(z.literal('')),
 });
 type FormData = z.infer<typeof schema>;
