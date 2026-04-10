@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Pencil, Users as UsersIcon } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,18 +14,29 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
 export default function Usuarios() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  // Edit state
   const [editUser, setEditUser] = useState<any>(null);
   const [editNome, setEditNome] = useState('');
   const [editCargo, setEditCargo] = useState('');
   const [editMatricula, setEditMatricula] = useState('');
   const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
   const [selectedPerfil, setSelectedPerfil] = useState<string>('');
+
+  // Create state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createNome, setCreateNome] = useState('');
+  const [createCargo, setCreateCargo] = useState('');
+  const [createMatricula, setCreateMatricula] = useState('');
+  const [createPerfil, setCreatePerfil] = useState('');
+  const [createEmpresas, setCreateEmpresas] = useState<string[]>([]);
 
   const isSelf = editUser?.id === user?.id;
 
@@ -108,7 +119,6 @@ export default function Usuarios() {
     mutationFn: async () => {
       if (!editUser) return;
 
-      // Self-edit validations
       if (isSelf) {
         if (selectedPerfil !== adminPerfilId) {
           throw new Error('Você não pode remover seu próprio perfil de Administrador');
@@ -118,15 +128,9 @@ export default function Usuarios() {
         }
       }
 
-      // Validate required fields
-      if (!selectedPerfil) {
-        throw new Error('Selecione um perfil de acesso');
-      }
-      if (selectedEmpresas.length === 0) {
-        throw new Error('Selecione ao menos uma empresa');
-      }
+      if (!selectedPerfil) throw new Error('Selecione um perfil de acesso');
+      if (selectedEmpresas.length === 0) throw new Error('Selecione ao menos uma empresa');
 
-      // Update profile
       const { error } = await supabase.from('profiles').update({
         nome: editNome || null,
         cargo: editCargo || null,
@@ -134,17 +138,13 @@ export default function Usuarios() {
       }).eq('id', editUser.id);
       if (error) throw error;
 
-      // Sync empresas: compute diff instead of delete-all
+      // Sync empresas diff
       const currentEmpresas = userEmpresas as string[];
       const toAddEmpresas = selectedEmpresas.filter((id) => !currentEmpresas.includes(id));
       const toRemoveEmpresas = currentEmpresas.filter((id) => !selectedEmpresas.includes(id));
 
       if (toRemoveEmpresas.length > 0) {
-        const { error: delErr } = await supabase
-          .from('usuario_empresas')
-          .delete()
-          .eq('user_id', editUser.id)
-          .in('empresa_id', toRemoveEmpresas);
+        const { error: delErr } = await supabase.from('usuario_empresas').delete().eq('user_id', editUser.id).in('empresa_id', toRemoveEmpresas);
         if (delErr) throw delErr;
       }
       if (toAddEmpresas.length > 0) {
@@ -153,7 +153,7 @@ export default function Usuarios() {
         if (insErr) throw insErr;
       }
 
-      // Sync perfil: only change if different
+      // Sync perfil
       const currentPerfil = (userPerfil as string) || '';
       if (selectedPerfil !== currentPerfil) {
         if (currentPerfil) {
@@ -171,7 +171,39 @@ export default function Usuarios() {
       queryClient.invalidateQueries({ queryKey: ['isAdmin'] });
       queryClient.invalidateQueries({ queryKey: ['empresas'] });
       toast.success('Usuário atualizado!');
-      closeDialog();
+      closeEditDialog();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!createEmail || !createPassword || !createNome || !createPerfil || createEmpresas.length === 0) {
+        throw new Error('Preencha todos os campos obrigatórios');
+      }
+      if (createPassword.length < 6) {
+        throw new Error('Senha deve ter no mínimo 6 caracteres');
+      }
+
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: createEmail,
+          password: createPassword,
+          nome: createNome,
+          cargo: createCargo || null,
+          matricula: createMatricula || null,
+          perfil_id: createPerfil,
+          empresa_ids: createEmpresas,
+        },
+      });
+
+      if (error) throw new Error(error.message || 'Erro ao criar usuário');
+      if (data?.error) throw new Error(data.error);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      toast.success('Usuário criado com sucesso!');
+      closeCreateDialog();
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -184,27 +216,33 @@ export default function Usuarios() {
       const { error } = await supabase.from('profiles').update({ ativo }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-profiles'] }),
     onError: (e: any) => toast.error(e.message),
   });
 
-  const closeDialog = () => {
+  const closeEditDialog = () => {
     setEditUser(null);
     setSelectedEmpresas([]);
     setSelectedPerfil('');
   };
 
-  const toggleEmpresa = (empresaId: string) => {
-    // If self-editing and trying to uncheck last empresa, block
-    if (isSelf && selectedEmpresas.includes(empresaId) && selectedEmpresas.length === 1) {
+  const closeCreateDialog = () => {
+    setCreateOpen(false);
+    setCreateEmail('');
+    setCreatePassword('');
+    setCreateNome('');
+    setCreateCargo('');
+    setCreateMatricula('');
+    setCreatePerfil('');
+    setCreateEmpresas([]);
+  };
+
+  const toggleEmpresa = (empresaId: string, list: string[], setter: (v: string[]) => void, blockEmpty = false) => {
+    if (blockEmpty && list.includes(empresaId) && list.length === 1) {
       toast.error('Você não pode ficar sem nenhuma empresa vinculada');
       return;
     }
-    setSelectedEmpresas((prev) =>
-      prev.includes(empresaId) ? prev.filter((id) => id !== empresaId) : [...prev, empresaId]
-    );
+    setter(list.includes(empresaId) ? list.filter((id) => id !== empresaId) : [...list, empresaId]);
   };
 
   return (
@@ -214,20 +252,9 @@ export default function Usuarios() {
           <h1 className="text-2xl font-bold tracking-tight">Usuários</h1>
           <p className="text-muted-foreground">Gerencie os usuários do sistema</p>
         </div>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button disabled>
-                  <UsersIcon className="mr-2 h-4 w-4" /> Convidar Usuário
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Novos usuários são criados pela tela de registro</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Novo Usuário
+        </Button>
       </div>
 
       <Card>
@@ -299,7 +326,8 @@ export default function Usuarios() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!editUser} onOpenChange={(open) => !open && closeDialog()}>
+      {/* Edit dialog */}
+      <Dialog open={!!editUser} onOpenChange={(open) => !open && closeEditDialog()}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
@@ -322,30 +350,18 @@ export default function Usuarios() {
                 <Input value={editMatricula} onChange={(e) => setEditMatricula(e.target.value)} />
               </div>
             </div>
-
             <div>
               <Label>Perfil de Acesso</Label>
-              <Select
-                value={selectedPerfil}
-                onValueChange={setSelectedPerfil}
-                disabled={isSelf && selectedPerfil === adminPerfilId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um perfil" />
-                </SelectTrigger>
+              <Select value={selectedPerfil} onValueChange={setSelectedPerfil} disabled={isSelf && selectedPerfil === adminPerfilId}>
+                <SelectTrigger><SelectValue placeholder="Selecione um perfil" /></SelectTrigger>
                 <SelectContent>
                   {perfis.map((p: any) => (
                     <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {isSelf && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Você não pode alterar seu próprio perfil de Administrador
-                </p>
-              )}
+              {isSelf && <p className="text-xs text-muted-foreground mt-1">Você não pode alterar seu próprio perfil de Administrador</p>}
             </div>
-
             <div>
               <Label>Empresas Vinculadas</Label>
               <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto mt-1">
@@ -353,7 +369,7 @@ export default function Usuarios() {
                   <label key={e.id} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={selectedEmpresas.includes(e.id)}
-                      onCheckedChange={() => toggleEmpresa(e.id)}
+                      onCheckedChange={() => toggleEmpresa(e.id, selectedEmpresas, setSelectedEmpresas, isSelf)}
                     />
                     <span className="text-sm">{e.nome}</span>
                   </label>
@@ -363,9 +379,74 @@ export default function Usuarios() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
+            <Button variant="outline" onClick={closeEditDialog}>Cancelar</Button>
             <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create dialog */}
+      <Dialog open={createOpen} onOpenChange={(open) => !open && closeCreateDialog()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Novo Usuário</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Email *</Label>
+              <Input type="email" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} placeholder="usuario@email.com" />
+            </div>
+            <div>
+              <Label>Senha *</Label>
+              <Input type="password" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div>
+              <Label>Nome *</Label>
+              <Input value={createNome} onChange={(e) => setCreateNome(e.target.value)} placeholder="Nome completo" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Cargo</Label>
+                <Input value={createCargo} onChange={(e) => setCreateCargo(e.target.value)} />
+              </div>
+              <div>
+                <Label>Matrícula</Label>
+                <Input value={createMatricula} onChange={(e) => setCreateMatricula(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Perfil de Acesso *</Label>
+              <Select value={createPerfil} onValueChange={setCreatePerfil}>
+                <SelectTrigger><SelectValue placeholder="Selecione um perfil" /></SelectTrigger>
+                <SelectContent>
+                  {perfis.map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Empresas Vinculadas *</Label>
+              <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto mt-1">
+                {empresas.map((e: any) => (
+                  <label key={e.id} className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={createEmpresas.includes(e.id)}
+                      onCheckedChange={() => toggleEmpresa(e.id, createEmpresas, setCreateEmpresas)}
+                    />
+                    <span className="text-sm">{e.nome}</span>
+                  </label>
+                ))}
+                {empresas.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma empresa</p>}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeCreateDialog}>Cancelar</Button>
+            <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
+              {createMutation.isPending ? 'Criando...' : 'Criar Usuário'}
             </Button>
           </DialogFooter>
         </DialogContent>
