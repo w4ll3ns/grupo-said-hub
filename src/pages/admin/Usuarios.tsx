@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -81,26 +81,17 @@ export default function Usuarios() {
     setEditMatricula(profile.matricula || '');
   };
 
-  // Sync fetched data into state when queries resolve
-  const syncedEmpresas = editUser ? userEmpresas : [];
-  const syncedPerfil = editUser ? (userPerfil || '') : '';
+  useEffect(() => {
+    if (editUser && userEmpresas.length > 0) {
+      setSelectedEmpresas(userEmpresas);
+    }
+  }, [editUser, userEmpresas]);
 
-  // Use local state, initialized from query data
-  useState(() => {
-    if (syncedEmpresas.length > 0) setSelectedEmpresas(syncedEmpresas);
-    if (syncedPerfil) setSelectedPerfil(syncedPerfil);
-  });
-
-  // Effect-like: update local state when query data changes
-  const currentEmpresas = editUser ? userEmpresas : [];
-  const currentPerfil = editUser ? (userPerfil || '') : '';
-
-  if (editUser && selectedEmpresas.length === 0 && currentEmpresas.length > 0 && selectedEmpresas !== currentEmpresas) {
-    setSelectedEmpresas(currentEmpresas);
-  }
-  if (editUser && !selectedPerfil && currentPerfil) {
-    setSelectedPerfil(currentPerfil);
-  }
+  useEffect(() => {
+    if (editUser && userPerfil) {
+      setSelectedPerfil(userPerfil);
+    }
+  }, [editUser, userPerfil]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
