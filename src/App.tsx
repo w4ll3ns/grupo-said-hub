@@ -19,6 +19,8 @@ import PlanoContas from "./pages/financeiro/PlanoContas";
 import ContasBancarias from "./pages/financeiro/ContasBancarias";
 import FormasPagamento from "./pages/financeiro/FormasPagamento";
 import CentrosCusto from "./pages/financeiro/CentrosCusto";
+import ContasPagar from "./pages/financeiro/ContasPagar";
+import ContasReceber from "./pages/financeiro/ContasReceber";
 import RDODashboard from "./pages/rdo/Dashboard";
 import ComprasDashboard from "./pages/compras/Dashboard";
 
@@ -58,7 +60,8 @@ const App = () => (
               <Route path="/financeiro/contas-bancarias" element={<ContasBancarias />} />
               <Route path="/financeiro/formas-pagamento" element={<FormasPagamento />} />
               <Route path="/financeiro/centros-custo" element={<CentrosCusto />} />
-
+              <Route path="/financeiro/contas-pagar" element={<ContasPagar />} />
+              <Route path="/financeiro/contas-receber" element={<ContasReceber />} />
               {/* RDO */}
               <Route path="/rdo" element={<RDODashboard />} />
 
