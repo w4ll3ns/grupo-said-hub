@@ -1,31 +1,80 @@
 
 
-# Corrigir vinculação do usuário e testar módulo financeiro
+# Fase 3 — Lançamentos Financeiros (Contas a Pagar e Receber)
 
-## Problema identificado
-O usuário `wallen.santiago@live.com` (id: `342aaaf2-6052-42b1-af34-39f981806573`) **nao esta vinculado a nenhuma empresa nem perfil**. As tabelas `usuario_empresas` e `usuario_perfis` estao vazias. Isso faz com que:
-- A sidebar apareca sem itens de menu
-- As queries de empresas retornem `[]` (bloqueadas por RLS)
-- O seletor de empresa na topbar fique vazio
+## Objetivo
+Criar a tabela de lançamentos financeiros e duas telas CRUD (Contas a Pagar e Contas a Receber) vinculadas aos cadastros base existentes.
 
-As tabelas financeiras estao corretamente populadas (20 receitas, 32 despesas, 6 contas bancarias, 12 formas de pagamento, 8 centros de custo).
+---
 
-## Plano
+## 1. Migração de banco de dados
 
-### 1. Migração: vincular usuario as empresas e ao perfil Administrador
-Criar uma migração SQL que:
-- Insere `usuario_empresas` vinculando o usuario `342aaaf2-...` as duas empresas (Said Engenharia e Said Incorporacoes)
-- Insere `usuario_perfis` vinculando o usuario ao perfil Administrador (`b1111111-...`)
-- Tambem vincular o usuario `teste@gruposaid.com` (`ba0332d1-...`) da mesma forma
+**Tabela `lancamentos`** — tabela unificada para receitas e despesas:
 
-### 2. Testar navegacao no modulo financeiro
-Apos a migracao, usar o browser para:
-- Verificar que a sidebar agora exibe os itens do modulo Financeiro
-- Navegar ate Plano de Contas e verificar as abas Receitas/Despesas
-- Navegar ate Contas Bancarias e verificar a listagem
-- Navegar ate Formas de Pagamento e verificar a listagem
-- Navegar ate Centros de Custo e verificar a listagem
+| Coluna | Tipo | Notas |
+|--------|------|-------|
+| id | uuid PK | gen_random_uuid() |
+| empresa_id | uuid FK empresas | NOT NULL |
+| tipo | text | 'pagar' ou 'receber' |
+| descricao | text | NOT NULL |
+| valor | numeric(15,2) | NOT NULL |
+| data_emissao | date | NOT NULL, default today |
+| data_vencimento | date | NOT NULL |
+| data_pagamento | date | nullable (preenchido quando pago) |
+| status | text | 'pendente', 'pago', 'vencido', 'cancelado' |
+| conta_bancaria_id | uuid FK contas_bancarias | nullable |
+| forma_pagamento_id | uuid FK formas_pagamento | nullable |
+| centro_custo_id | uuid FK centros_custo | nullable |
+| plano_receita_id | uuid FK plano_receitas | nullable (para tipo='receber') |
+| plano_despesa_id | uuid FK plano_despesas | nullable (para tipo='pagar') |
+| observacoes | text | nullable |
+| created_at, updated_at | timestamptz | triggers |
+
+**RLS:** Mesma estrategia das tabelas existentes — Admin ALL + user filtrado por `user_belongs_to_empresa`.
+
+**Trigger:** `update_updated_at_column` + trigger de validacao para garantir que `plano_receita_id` so e preenchido quando tipo='receber' e `plano_despesa_id` quando tipo='pagar'.
+
+---
+
+## 2. Rotas e Sidebar
+
+- `/financeiro/contas-pagar` — CRUD de lancamentos tipo='pagar'
+- `/financeiro/contas-receber` — CRUD de lancamentos tipo='receber'
+
+Ja existem na sidebar (linhas 43-44 do AppSidebar), so precisam das paginas e rotas no App.tsx.
+
+---
+
+## 3. Paginas CRUD
+
+**`ContasPagar.tsx`** e **`ContasReceber.tsx`** — mesmo padrao visual (ContasBancarias como referencia):
+
+- **Tabela** com colunas: descricao, valor (BRL), vencimento, status (badge colorido), categoria, conta bancaria, forma pagamento
+- **Filtros**: busca por descricao + filtro por status (pendente/pago/vencido/cancelado)
+- **Dialog de criacao/edicao** com:
+  - Descricao, valor, data emissao, data vencimento
+  - Select de plano de receitas/despesas (filtrado por empresa)
+  - Select de conta bancaria, forma de pagamento, centro de custo
+  - Observacoes (textarea)
+- **Acao de "Baixar"** (marcar como pago): preenche data_pagamento e muda status para 'pago'
+- **Badge de status** com cores: pendente=amarelo, pago=verde, vencido=vermelho, cancelado=cinza
+
+Ambas as paginas sao identicas, diferindo apenas no `tipo` ('pagar'/'receber') e nos labels.
+
+---
+
+## 4. Seeds
+
+Inserir ~10 lancamentos por empresa (mix de pagar/receber, pendentes e pagos) vinculados aos cadastros existentes.
+
+---
 
 ## Detalhes tecnicos
-A migracao usara `INSERT INTO ... ON CONFLICT DO NOTHING` para ser idempotente. Nenhuma alteracao de codigo frontend e necessaria — o problema e exclusivamente de dados.
+
+- Formularios com react-hook-form + Zod, validacao em pt-BR
+- Valores formatados como BRL (`Intl.NumberFormat`)
+- Datas formatadas com `toLocaleDateString('pt-BR')`
+- Queries filtradas por `empresa_id = empresaAtiva.id` e `tipo`
+- Selects de conta bancaria, forma pagamento, centro custo e plano carregados via queries separadas
+- Componente compartilhado ou page factory para evitar duplicacao entre ContasPagar e ContasReceber
 
