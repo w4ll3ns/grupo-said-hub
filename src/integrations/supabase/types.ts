@@ -167,6 +167,109 @@ export type Database = {
           },
         ]
       }
+      lancamentos: {
+        Row: {
+          centro_custo_id: string | null
+          conta_bancaria_id: string | null
+          created_at: string
+          data_emissao: string
+          data_pagamento: string | null
+          data_vencimento: string
+          descricao: string
+          empresa_id: string
+          forma_pagamento_id: string | null
+          id: string
+          observacoes: string | null
+          plano_despesa_id: string | null
+          plano_receita_id: string | null
+          status: string
+          tipo: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          centro_custo_id?: string | null
+          conta_bancaria_id?: string | null
+          created_at?: string
+          data_emissao?: string
+          data_pagamento?: string | null
+          data_vencimento: string
+          descricao: string
+          empresa_id: string
+          forma_pagamento_id?: string | null
+          id?: string
+          observacoes?: string | null
+          plano_despesa_id?: string | null
+          plano_receita_id?: string | null
+          status?: string
+          tipo: string
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          centro_custo_id?: string | null
+          conta_bancaria_id?: string | null
+          created_at?: string
+          data_emissao?: string
+          data_pagamento?: string | null
+          data_vencimento?: string
+          descricao?: string
+          empresa_id?: string
+          forma_pagamento_id?: string | null
+          id?: string
+          observacoes?: string | null
+          plano_despesa_id?: string | null
+          plano_receita_id?: string | null
+          status?: string
+          tipo?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lancamentos_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_conta_bancaria_id_fkey"
+            columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "contas_bancarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_forma_pagamento_id_fkey"
+            columns: ["forma_pagamento_id"]
+            isOneToOne: false
+            referencedRelation: "formas_pagamento"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_plano_despesa_id_fkey"
+            columns: ["plano_despesa_id"]
+            isOneToOne: false
+            referencedRelation: "plano_despesas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_plano_receita_id_fkey"
+            columns: ["plano_receita_id"]
+            isOneToOne: false
+            referencedRelation: "plano_receitas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       perfil_permissoes: {
         Row: {
           aprovar: boolean
