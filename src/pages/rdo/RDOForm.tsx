@@ -10,7 +10,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Sun, Cloud, CloudRain, CloudLightning, Plus, Trash2, ChevronLeft, ChevronRight, Check, Camera, X, Image as ImageIcon } from 'lucide-react';
+import { Sun, Cloud, CloudRain, CloudLightning, Plus, Trash2, ChevronLeft, ChevronRight, Check, Camera, X, Image as ImageIcon, FileDown } from 'lucide-react';
+import { fetchAndGenerateRDOPdf } from '@/utils/fetchAndGenerateRDOPdf';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -720,6 +721,11 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
           </Button>
         ) : (
           <div className="flex gap-2">
+            {isEditing && (
+              <Button variant="outline" size="sm" onClick={() => fetchAndGenerateRDOPdf(rdoId!)}>
+                <FileDown className="mr-1 h-4 w-4" /> PDF
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => saveMutation.mutate(false)} disabled={saveMutation.isPending}>
               Rascunho
             </Button>

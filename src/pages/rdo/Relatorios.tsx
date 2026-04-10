@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Plus, Search, FileText, Trash2, Sun, Cloud, CloudRain, CloudLightning } from 'lucide-react';
+import { Plus, Search, FileText, Trash2, Sun, Cloud, CloudRain, CloudLightning, FileDown } from 'lucide-react';
+import { fetchAndGenerateRDOPdf } from '@/utils/fetchAndGenerateRDOPdf';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -122,14 +123,17 @@ export default function Relatorios() {
                     </Badge>
                   </div>
                 </div>
-                {item.status === 'rascunho' && (
-                  <div className="flex justify-end mt-2">
+                <div className="flex justify-end mt-2 gap-1">
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); fetchAndGenerateRDOPdf(item.id); }}>
+                    <FileDown className="h-4 w-4 mr-1" /> PDF
+                  </Button>
+                  {item.status === 'rascunho' && (
                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"
                       onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}>
                       <Trash2 className="h-4 w-4 mr-1" /> Excluir
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}
