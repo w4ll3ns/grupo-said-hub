@@ -1,24 +1,164 @@
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Users as UsersIcon } from 'lucide-react';
+import { Pencil, Users as UsersIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 export default function Usuarios() {
+  const queryClient = useQueryClient();
+  const [editUser, setEditUser] = useState<any>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editCargo, setEditCargo] = useState('');
+  const [editMatricula, setEditMatricula] = useState('');
+  const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
+  const [selectedPerfil, setSelectedPerfil] = useState<string>('');
+
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ['admin-profiles'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('nome');
+      const { data, error } = await supabase.from('profiles').select('*').order('nome');
       if (error) throw error;
       return data;
     },
   });
+
+  const { data: empresas = [] } = useQuery({
+    queryKey: ['all-empresas'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('empresas').select('id, nome').order('nome');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: perfis = [] } = useQuery({
+    queryKey: ['all-perfis'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('perfis').select('id, nome').order('nome');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: userEmpresas = [] } = useQuery({
+    queryKey: ['usuario-empresas', editUser?.id],
+    queryFn: async () => {
+      if (!editUser) return [];
+      const { data, error } = await supabase.from('usuario_empresas').select('empresa_id').eq('user_id', editUser.id);
+      if (error) throw error;
+      return data.map((d: any) => d.empresa_id);
+    },
+    enabled: !!editUser,
+  });
+
+  const { data: userPerfil } = useQuery({
+    queryKey: ['usuario-perfil', editUser?.id],
+    queryFn: async () => {
+      if (!editUser) return null;
+      const { data, error } = await supabase.from('usuario_perfis').select('perfil_id').eq('user_id', editUser.id).maybeSingle();
+      if (error) throw error;
+      return data?.perfil_id || '';
+    },
+    enabled: !!editUser,
+  });
+
+  const openEdit = (profile: any) => {
+    setEditUser(profile);
+    setEditNome(profile.nome || '');
+    setEditCargo(profile.cargo || '');
+    setEditMatricula(profile.matricula || '');
+  };
+
+  // Sync fetched data into state when queries resolve
+  const syncedEmpresas = editUser ? userEmpresas : [];
+  const syncedPerfil = editUser ? (userPerfil || '') : '';
+
+  // Use local state, initialized from query data
+  useState(() => {
+    if (syncedEmpresas.length > 0) setSelectedEmpresas(syncedEmpresas);
+    if (syncedPerfil) setSelectedPerfil(syncedPerfil);
+  });
+
+  // Effect-like: update local state when query data changes
+  const currentEmpresas = editUser ? userEmpresas : [];
+  const currentPerfil = editUser ? (userPerfil || '') : '';
+
+  if (editUser && selectedEmpresas.length === 0 && currentEmpresas.length > 0 && selectedEmpresas !== currentEmpresas) {
+    setSelectedEmpresas(currentEmpresas);
+  }
+  if (editUser && !selectedPerfil && currentPerfil) {
+    setSelectedPerfil(currentPerfil);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!editUser) return;
+
+      // Update profile
+      const { error } = await supabase.from('profiles').update({
+        nome: editNome || null,
+        cargo: editCargo || null,
+        matricula: editMatricula || null,
+      }).eq('id', editUser.id);
+      if (error) throw error;
+
+      // Sync empresas: delete all, re-insert selected
+      await supabase.from('usuario_empresas').delete().eq('user_id', editUser.id);
+      if (selectedEmpresas.length > 0) {
+        const rows = selectedEmpresas.map((empresa_id) => ({ user_id: editUser.id, empresa_id }));
+        const { error: eErr } = await supabase.from('usuario_empresas').insert(rows);
+        if (eErr) throw eErr;
+      }
+
+      // Sync perfil: delete all, re-insert selected
+      await supabase.from('usuario_perfis').delete().eq('user_id', editUser.id);
+      if (selectedPerfil) {
+        const { error: pErr } = await supabase.from('usuario_perfis').insert({ user_id: editUser.id, perfil_id: selectedPerfil });
+        if (pErr) throw pErr;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      toast.success('Usuário atualizado!');
+      closeDialog();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, ativo }: { id: string; ativo: boolean }) => {
+      const { error } = await supabase.from('profiles').update({ ativo }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const closeDialog = () => {
+    setEditUser(null);
+    setSelectedEmpresas([]);
+    setSelectedPerfil('');
+  };
+
+  const toggleEmpresa = (empresaId: string) => {
+    setSelectedEmpresas((prev) =>
+      prev.includes(empresaId) ? prev.filter((id) => id !== empresaId) : [...prev, empresaId]
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -27,9 +167,20 @@ export default function Usuarios() {
           <h1 className="text-2xl font-bold tracking-tight">Usuários</h1>
           <p className="text-muted-foreground">Gerencie os usuários do sistema</p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" /> Convidar Usuário
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button disabled>
+                  <UsersIcon className="mr-2 h-4 w-4" /> Convidar Usuário
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Novos usuários são criados pela tela de registro</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       <Card>
@@ -46,6 +197,7 @@ export default function Usuarios() {
                   <TableHead>Cargo</TableHead>
                   <TableHead>Matrícula</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="w-[100px]">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -64,15 +216,26 @@ export default function Usuarios() {
                     <TableCell>{p.cargo || '—'}</TableCell>
                     <TableCell>{p.matricula || '—'}</TableCell>
                     <TableCell>
-                      <Badge variant={p.ativo ? 'default' : 'secondary'}>
-                        {p.ativo ? 'Ativo' : 'Inativo'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={p.ativo}
+                          onCheckedChange={(checked) => toggleMutation.mutate({ id: p.id, ativo: checked })}
+                        />
+                        <Badge variant={p.ativo ? 'default' : 'secondary'}>
+                          {p.ativo ? 'Ativo' : 'Inativo'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
                 {profiles.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       Nenhum usuário encontrado
                     </TableCell>
                   </TableRow>
@@ -82,6 +245,66 @@ export default function Usuarios() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!editUser} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Usuário</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nome</Label>
+              <Input value={editNome} onChange={(e) => setEditNome(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Cargo</Label>
+                <Input value={editCargo} onChange={(e) => setEditCargo(e.target.value)} />
+              </div>
+              <div>
+                <Label>Matrícula</Label>
+                <Input value={editMatricula} onChange={(e) => setEditMatricula(e.target.value)} />
+              </div>
+            </div>
+
+            <div>
+              <Label>Perfil de Acesso</Label>
+              <Select value={selectedPerfil} onValueChange={setSelectedPerfil}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  {perfis.map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Empresas Vinculadas</Label>
+              <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-y-auto mt-1">
+                {empresas.map((e: any) => (
+                  <label key={e.id} className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedEmpresas.includes(e.id)}
+                      onCheckedChange={() => toggleEmpresa(e.id)}
+                    />
+                    <span className="text-sm">{e.nome}</span>
+                  </label>
+                ))}
+                {empresas.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma empresa</p>}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
+            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
