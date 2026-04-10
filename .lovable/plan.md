@@ -1,58 +1,54 @@
 
 
-# Implementação da Página de Configurações
+# Auditoria do Módulo de Administração
 
-## Resumo
+## Resultado por Página
 
-Criar uma página de configurações completa com 3 seções: dados cadastrais da empresa ativa, upload de logo, e preferências do sistema. Requer adicionar colunas à tabela `empresas` para armazenar dados cadastrais extras.
+| Página | Listagem | Criar | Editar | Excluir | Ativar/Desativar |
+|--------|----------|-------|--------|---------|------------------|
+| **Empresas** | OK | Botão sem ação | Sem edição | Sem exclusão | Sem toggle |
+| **Usuários** | OK | Botão sem ação | Sem edição | Sem exclusão | Sem toggle |
+| **Perfis** | OK | Botão sem ação | Sem edição | Sem exclusão | — |
+| **Configurações** | — | — | OK (empresa ativa) | — | — |
 
-## Fase 1 — Migração de banco de dados
+Todos os botões "Nova Empresa", "Convidar Usuário" e "Novo Perfil" são decorativos — não abrem nenhum dialog nem executam ação. Nenhuma linha das tabelas tem botões de editar ou excluir. O administrador consegue apenas visualizar os registros.
 
-Adicionar colunas à tabela `empresas`:
-- `email` (text, nullable)
-- `telefone` (text, nullable)
-- `endereco` (text, nullable)
-- `cidade` (text, nullable)
-- `estado` (text, nullable)
-- `cep` (text, nullable)
-- `inscricao_estadual` (text, nullable)
-- `inscricao_municipal` (text, nullable)
+## Plano de Implementação
 
-Criar bucket de storage `empresa-logos` (público) com RLS para upload autenticado.
+### Fase 1 — Empresas (`Empresas.tsx`)
+- **Criar**: Dialog com formulário (nome, CNPJ, email, telefone, endereço, cidade, estado, CEP) + insert na tabela `empresas` + insert em `usuario_empresas` para vincular o admin
+- **Editar**: Botão de editar em cada card → mesmo dialog pré-preenchido → update
+- **Ativar/Desativar**: Toggle no card para alterar `ativa` (sem excluir permanentemente, por integridade referencial)
+- **Selecionar**: Clicar no card define como `empresaAtiva` via `setEmpresaAtiva()`
 
-## Fase 2 — Página de Configurações (`src/pages/admin/Configuracoes.tsx`)
+### Fase 2 — Usuários (`Usuarios.tsx`)
+- **Editar**: Botão por linha → dialog para alterar nome, cargo, matrícula
+- **Ativar/Desativar**: Toggle de `ativo` por linha
+- **Atribuir Empresas**: Multi-select de empresas vinculadas (tabela `usuario_empresas`)
+- **Atribuir Perfil**: Select de perfil vinculado (tabela `usuario_perfis`)
+- Botão "Convidar" ficará desabilitado com tooltip explicando que o convite é feito pela tela de registro (não há invite flow via email no momento)
 
-Reescrever com 3 tabs:
+### Fase 3 — Perfis (`Perfis.tsx`)
+- **Criar**: Dialog com nome, descrição, empresa (opcional) → insert em `perfis`
+- **Editar**: Botão por linha → mesmo dialog pré-preenchido → update
+- **Excluir**: Botão com confirmação (AlertDialog) → delete, apenas para perfis não-sistema
+- **Gerenciar Permissões**: Ao clicar em um perfil, abrir dialog/painel com grid de checkboxes (módulo × funcionalidade × ações: visualizar/criar/editar/excluir/aprovar) que faz CRUD na tabela `perfil_permissoes`
 
-### Tab 1: Dados da Empresa
-- Formulário com react-hook-form + zod
-- Campos: nome, CNPJ, inscrição estadual/municipal, email, telefone, endereço, cidade, estado, CEP
-- Pré-preenche com dados da `empresaAtiva`
-- Salva via `supabase.from('empresas').update()`
-
-### Tab 2: Logo da Empresa
-- Preview da logo atual (ou placeholder)
-- Input de upload de arquivo (imagem)
-- Upload para bucket `empresa-logos` via Supabase Storage
-- Atualiza `logo_url` na tabela `empresas`
-- Botão de remover logo
-
-### Tab 3: Preferências do Sistema
-- Toggle de tema (claro/escuro) — já existe no Topbar, centralizar aqui
-- Moeda padrão (BRL fixo por ora, mas campo preparado)
-- Formato de data
+### Fase 4 — Migração (se necessária)
+- Nenhuma alteração de schema necessária. Todas as tabelas já existem com as colunas corretas
+- RLS já está configurado para admin em todas as tabelas relevantes
 
 ## Arquivos modificados
 
 | Arquivo | Ação |
 |---------|------|
-| Migração SQL | Adicionar colunas + bucket storage |
-| `src/pages/admin/Configuracoes.tsx` | Reescrita completa |
+| `src/pages/admin/Empresas.tsx` | Reescrita com CRUD completo |
+| `src/pages/admin/Usuarios.tsx` | Reescrita com edição + atribuição de perfis/empresas |
+| `src/pages/admin/Perfis.tsx` | Reescrita com CRUD + grid de permissões |
 
 ## Detalhes técnicos
-- Usa `useEmpresa()` para obter empresa ativa
-- Upload via `supabase.storage.from('empresa-logos').upload()`
-- URL pública via `getPublicUrl()`
-- Segue padrão existente de forms com shadcn/ui Tabs + Card
-- RLS do bucket: authenticated users que pertencem à empresa podem fazer upload
+- Padrão: `react-hook-form` + `zod` + `useMutation` + `Dialog` (mesmo dos outros módulos)
+- Permissões de perfis: grid com checkboxes renderizados dinamicamente a partir dos módulos/funcionalidades do sidebar
+- Sem migração de banco — tudo já existe
+- Import de `@/integrations/supabase/client` (corrigindo os imports atuais que usam `@/lib/supabase`)
 
