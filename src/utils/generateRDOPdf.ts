@@ -1,11 +1,16 @@
-import pdfMake from 'pdfmake/build/pdfmake';
-import pdfFonts from 'pdfmake/build/vfs_fonts';
+import * as pdfMakeModule from 'pdfmake/build/pdfmake';
+import * as pdfFonts from 'pdfmake/build/vfs_fonts';
 import { format, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { TDocumentDefinitions, Content, TableCell, StyleDictionary } from 'pdfmake/interfaces';
 
 // Register fonts
-(pdfMake as any).vfs = (pdfFonts as any).pdfMake?.vfs ?? pdfFonts;
+const pdfMake = (pdfMakeModule as any).default || pdfMakeModule;
+if ((pdfFonts as any).pdfMake?.vfs) {
+  pdfMake.vfs = (pdfFonts as any).pdfMake.vfs;
+} else {
+  pdfMake.vfs = (pdfFonts as any).default?.pdfMake?.vfs ?? pdfFonts;
+}
 
 export interface RDOPdfData {
   rdo: {
