@@ -112,8 +112,8 @@ export default function Solicitacoes() {
       const { data: sol, error } = await supabase.from('solicitacoes_compra').insert({
         empresa_id: empresaAtiva!.id,
         data_necessidade: values.data_necessidade ? format(values.data_necessidade, 'yyyy-MM-dd') : null,
-        obra_id: values.obra_id || null,
-        centro_custo_id: values.centro_custo_id || null,
+        obra_id: values.obra_id && values.obra_id !== '__none__' ? values.obra_id : null,
+        centro_custo_id: values.centro_custo_id && values.centro_custo_id !== '__none__' ? values.centro_custo_id : null,
         justificativa: values.justificativa || null,
         prioridade: values.prioridade,
         observacoes: values.observacoes || null,
@@ -326,7 +326,7 @@ export default function Solicitacoes() {
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="">Nenhuma</SelectItem>
+                        <SelectItem value="__none__">Nenhuma</SelectItem>
                         {obras.map((o: any) => <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>)}
                       </SelectContent>
                     </Select><FormMessage />
@@ -337,7 +337,7 @@ export default function Solicitacoes() {
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="">Nenhum</SelectItem>
+                        <SelectItem value="__none__">Nenhum</SelectItem>
                         {centrosCusto.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
                       </SelectContent>
                     </Select><FormMessage />
