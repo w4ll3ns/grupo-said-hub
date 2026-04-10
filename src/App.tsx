@@ -21,6 +21,11 @@ import FormasPagamento from "./pages/financeiro/FormasPagamento";
 import CentrosCusto from "./pages/financeiro/CentrosCusto";
 import ContasPagar from "./pages/financeiro/ContasPagar";
 import ContasReceber from "./pages/financeiro/ContasReceber";
+import Lancamentos from "./pages/financeiro/Lancamentos";
+import Transferencias from "./pages/financeiro/Transferencias";
+import FluxoCaixa from "./pages/financeiro/FluxoCaixa";
+import DRE from "./pages/financeiro/DRE";
+import Metas from "./pages/financeiro/Metas";
 import RDODashboard from "./pages/rdo/Dashboard";
 import Obras from "./pages/rdo/Obras";
 import Funcionarios from "./pages/rdo/Funcionarios";
@@ -66,6 +71,11 @@ const App = () => (
               <Route path="/financeiro/centros-custo" element={<CentrosCusto />} />
               <Route path="/financeiro/contas-pagar" element={<ContasPagar />} />
               <Route path="/financeiro/contas-receber" element={<ContasReceber />} />
+              <Route path="/financeiro/lancamentos" element={<Lancamentos />} />
+              <Route path="/financeiro/transferencias" element={<Transferencias />} />
+              <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixa />} />
+              <Route path="/financeiro/dre" element={<DRE />} />
+              <Route path="/financeiro/metas" element={<Metas />} />
               {/* RDO */}
               <Route path="/rdo" element={<RDODashboard />} />
               <Route path="/rdo/relatorios" element={<Relatorios />} />
