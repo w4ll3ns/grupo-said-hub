@@ -80,7 +80,7 @@ export default function Perfis() {
       const payload: any = {
         nome: perfilNome,
         descricao: perfilDescricao || null,
-        empresa_id: perfilEmpresaId || null,
+        empresa_id: perfilEmpresaId && perfilEmpresaId !== 'all' ? perfilEmpresaId : null,
       };
       if (editingPerfil) {
         const { error } = await supabase.from('perfis').update(payload).eq('id', editingPerfil.id);
