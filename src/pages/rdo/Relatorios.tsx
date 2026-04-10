@@ -15,7 +15,9 @@ import RDOForm from './RDOForm';
 
 type RDO = {
   id: string; empresa_id: string; obra_id: string; data: string;
-  clima: string; condicao_trabalho: string; observacoes: string | null;
+  clima_manha: string; clima_tarde: string;
+  condicao_manha: string; condicao_tarde: string;
+  observacoes: string | null; numero: number | null;
   status: string; created_at: string;
   obras?: { nome: string };
 };
@@ -60,20 +62,13 @@ export default function Relatorios() {
     onError: () => toast.error('Erro ao excluir'),
   });
 
-  const handleOpen = (id?: string) => {
-    setEditingId(id || null);
-    setOpen(true);
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    setEditingId(null);
-    queryClient.invalidateQueries({ queryKey: ['rdos'] });
-  };
+  const handleOpen = (id?: string) => { setEditingId(id || null); setOpen(true); };
+  const handleClose = () => { setOpen(false); setEditingId(null); queryClient.invalidateQueries({ queryKey: ['rdos'] }); };
 
   const filtered = items.filter((i) =>
     i.obras?.nome?.toLowerCase().includes(search.toLowerCase()) ||
-    format(new Date(i.data + 'T00:00:00'), 'dd/MM/yyyy').includes(search)
+    format(new Date(i.data + 'T00:00:00'), 'dd/MM/yyyy').includes(search) ||
+    (i.numero && String(i.numero).includes(search))
   );
 
   return (
@@ -86,7 +81,7 @@ export default function Relatorios() {
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por obra ou data..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Buscar por obra, data ou nº..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <Button onClick={() => handleOpen()} size="sm">
           <Plus className="mr-1 h-4 w-4" /> Novo RDO
@@ -108,14 +103,20 @@ export default function Relatorios() {
                       <FileText className="h-5 w-5 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold truncate">{item.obras?.nome || 'Obra'}</p>
+                      <div className="flex items-center gap-2">
+                        {item.numero && <span className="text-xs font-mono text-muted-foreground">#{item.numero}</span>}
+                        <p className="font-semibold truncate">{item.obras?.nome || 'Obra'}</p>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {format(new Date(item.data + 'T00:00:00'), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {climaIcons[item.clima]}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-col items-center gap-0.5">
+                      {climaIcons[item.clima_manha]}
+                      {climaIcons[item.clima_tarde]}
+                    </div>
                     <Badge variant={item.status === 'finalizado' ? 'default' : 'secondary'}>
                       {item.status === 'finalizado' ? 'Finalizado' : 'Rascunho'}
                     </Badge>
@@ -123,12 +124,8 @@ export default function Relatorios() {
                 </div>
                 {item.status === 'rascunho' && (
                   <div className="flex justify-end mt-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}
-                    >
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"
+                      onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}>
                       <Trash2 className="h-4 w-4 mr-1" /> Excluir
                     </Button>
                   </div>

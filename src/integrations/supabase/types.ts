@@ -348,37 +348,49 @@ export type Database = {
       }
       obras: {
         Row: {
+          contratante: string | null
+          contrato: string | null
           created_at: string
           data_inicio: string | null
           data_previsao: string | null
           empresa_id: string
           endereco: string | null
           id: string
+          local: string | null
           nome: string
+          prazo_contratual_dias: number | null
           responsavel: string | null
           status: string
           updated_at: string
         }
         Insert: {
+          contratante?: string | null
+          contrato?: string | null
           created_at?: string
           data_inicio?: string | null
           data_previsao?: string | null
           empresa_id: string
           endereco?: string | null
           id?: string
+          local?: string | null
           nome: string
+          prazo_contratual_dias?: number | null
           responsavel?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
+          contratante?: string | null
+          contrato?: string | null
           created_at?: string
           data_inicio?: string | null
           data_previsao?: string | null
           empresa_id?: string
           endereco?: string | null
           id?: string
+          local?: string | null
           nome?: string
+          prazo_contratual_dias?: number | null
           responsavel?: string | null
           status?: string
           updated_at?: string
@@ -584,12 +596,60 @@ export type Database = {
         }
         Relationships: []
       }
+      rdo_aprovacoes: {
+        Row: {
+          aprovado_em: string | null
+          cargo: string | null
+          created_at: string
+          email: string | null
+          id: string
+          matricula: string | null
+          nome: string
+          rdo_id: string
+          status: string
+          tipo: string
+        }
+        Insert: {
+          aprovado_em?: string | null
+          cargo?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          matricula?: string | null
+          nome: string
+          rdo_id: string
+          status?: string
+          tipo: string
+        }
+        Update: {
+          aprovado_em?: string | null
+          cargo?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          matricula?: string | null
+          nome?: string
+          rdo_id?: string
+          status?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdo_aprovacoes_rdo_id_fkey"
+            columns: ["rdo_id"]
+            isOneToOne: false
+            referencedRelation: "rdos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rdo_atividades: {
         Row: {
           descricao: string
           id: string
           quantidade: number | null
           rdo_id: string
+          status: string
           unidade: string | null
         }
         Insert: {
@@ -597,6 +657,7 @@ export type Database = {
           id?: string
           quantidade?: number | null
           rdo_id: string
+          status?: string
           unidade?: string | null
         }
         Update: {
@@ -604,6 +665,7 @@ export type Database = {
           id?: string
           quantidade?: number | null
           rdo_id?: string
+          status?: string
           unidade?: string | null
         }
         Relationships: [
@@ -623,6 +685,7 @@ export type Database = {
           id: string
           observacao: string | null
           operacional: boolean
+          quantidade: number
           rdo_id: string
         }
         Insert: {
@@ -631,6 +694,7 @@ export type Database = {
           id?: string
           observacao?: string | null
           operacional?: boolean
+          quantidade?: number
           rdo_id: string
         }
         Update: {
@@ -639,6 +703,7 @@ export type Database = {
           id?: string
           observacao?: string | null
           operacional?: boolean
+          quantidade?: number
           rdo_id?: string
         }
         Relationships: [
@@ -658,27 +723,71 @@ export type Database = {
           },
         ]
       }
+      rdo_fotos: {
+        Row: {
+          created_at: string
+          id: string
+          legenda: string | null
+          rdo_id: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          legenda?: string | null
+          rdo_id: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          legenda?: string | null
+          rdo_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdo_fotos_rdo_id_fkey"
+            columns: ["rdo_id"]
+            isOneToOne: false
+            referencedRelation: "rdos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rdo_funcionarios: {
         Row: {
           funcionario_id: string
+          horario_entrada: string | null
+          horario_intervalo: string | null
+          horario_saida: string | null
           horas: number | null
           id: string
+          local_trabalho: string | null
           observacao: string | null
           presente: boolean
           rdo_id: string
         }
         Insert: {
           funcionario_id: string
+          horario_entrada?: string | null
+          horario_intervalo?: string | null
+          horario_saida?: string | null
           horas?: number | null
           id?: string
+          local_trabalho?: string | null
           observacao?: string | null
           presente?: boolean
           rdo_id: string
         }
         Update: {
           funcionario_id?: string
+          horario_entrada?: string | null
+          horario_intervalo?: string | null
+          horario_saida?: string | null
           horas?: number | null
           id?: string
+          local_trabalho?: string | null
           observacao?: string | null
           presente?: boolean
           rdo_id?: string
@@ -702,39 +811,60 @@ export type Database = {
       }
       rdos: {
         Row: {
-          clima: string
-          condicao_trabalho: string
+          clima_manha: string
+          clima_tarde: string
+          condicao_manha: string
+          condicao_tarde: string
           created_at: string
           created_by: string | null
           data: string
           empresa_id: string
+          horario_entrada: string | null
+          horario_intervalo_fim: string | null
+          horario_intervalo_inicio: string | null
+          horario_saida: string | null
           id: string
+          numero: number | null
           obra_id: string
           observacoes: string | null
           status: string
           updated_at: string
         }
         Insert: {
-          clima?: string
-          condicao_trabalho?: string
+          clima_manha?: string
+          clima_tarde?: string
+          condicao_manha?: string
+          condicao_tarde?: string
           created_at?: string
           created_by?: string | null
           data: string
           empresa_id: string
+          horario_entrada?: string | null
+          horario_intervalo_fim?: string | null
+          horario_intervalo_inicio?: string | null
+          horario_saida?: string | null
           id?: string
+          numero?: number | null
           obra_id: string
           observacoes?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
-          clima?: string
-          condicao_trabalho?: string
+          clima_manha?: string
+          clima_tarde?: string
+          condicao_manha?: string
+          condicao_tarde?: string
           created_at?: string
           created_by?: string | null
           data?: string
           empresa_id?: string
+          horario_entrada?: string | null
+          horario_intervalo_fim?: string | null
+          horario_intervalo_inicio?: string | null
+          horario_saida?: string | null
           id?: string
+          numero?: number | null
           obra_id?: string
           observacoes?: string | null
           status?: string
