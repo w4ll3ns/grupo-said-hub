@@ -8,7 +8,7 @@ export async function fetchAndGenerateRDOPdf(rdoId: string) {
 
     // Fetch all data in parallel
     const [rdoRes, funcRes, equipRes, ativRes, fotosRes, aprovRes] = await Promise.all([
-      supabase.from('rdos').select('*, obras(nome, contrato, contratante, local, endereco, data_inicio, prazo_contratual_dias), empresas:empresa_id(nome, cnpj, logo_url)').eq('id', rdoId).single(),
+      supabase.from('rdos').select('*, obras(nome, contrato, contratante, local, endereco, data_inicio, prazo_contratual_dias, responsavel), empresas:empresa_id(nome, cnpj, logo_url)').eq('id', rdoId).single(),
       supabase.from('rdo_funcionarios').select('*, funcionarios(nome, cargo)').eq('rdo_id', rdoId),
       supabase.from('rdo_equipamentos').select('*, equipamentos(nome, tipo)').eq('rdo_id', rdoId),
       supabase.from('rdo_atividades').select('*').eq('rdo_id', rdoId),
