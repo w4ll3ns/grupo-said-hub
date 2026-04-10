@@ -8,7 +8,7 @@ export async function fetchAndGenerateRDOPdf(rdoId: string) {
 
     // Fetch all data in parallel
     const [rdoRes, funcRes, equipRes, ativRes, fotosRes, aprovRes] = await Promise.all([
-      supabase.from('rdos').select('*, obras(nome, contrato, contratante, local, endereco, data_inicio, prazo_contratual_dias), empresas:empresa_id(nome, cnpj, logo_url)').eq('id', rdoId).single(),
+      supabase.from('rdos').select('*, obras(nome, contrato, contratante, local, endereco, data_inicio, prazo_contratual_dias, responsavel), empresas:empresa_id(nome, cnpj, logo_url)').eq('id', rdoId).single(),
       supabase.from('rdo_funcionarios').select('*, funcionarios(nome, cargo)').eq('rdo_id', rdoId),
       supabase.from('rdo_equipamentos').select('*, equipamentos(nome, tipo)').eq('rdo_id', rdoId),
       supabase.from('rdo_atividades').select('*').eq('rdo_id', rdoId),
@@ -40,22 +40,24 @@ export async function fetchAndGenerateRDOPdf(rdoId: string) {
       },
       empresa: { nome: empresa.nome, cnpj: empresa.cnpj, logo_url: empresa.logo_url },
       obra: {
-        nome: obra.nome || '—',
+        nome: obra.nome || '--',
         contrato: obra.contrato,
         contratante: obra.contratante,
         local: obra.local,
         endereco: obra.endereco,
         data_inicio: obra.data_inicio,
         prazo_contratual_dias: obra.prazo_contratual_dias,
+        responsavel: obra.responsavel,
       },
       funcionarios: (funcRes.data || []).map((f: any) => ({
-        nome: f.funcionarios?.nome || '—',
+        nome: f.funcionarios?.nome || '--',
         cargo: f.funcionarios?.cargo,
         presente: f.presente,
         horas: f.horas,
         horario_entrada: f.horario_entrada,
         horario_saida: f.horario_saida,
         horario_intervalo: f.horario_intervalo,
+        local_trabalho: f.local_trabalho,
       })),
       equipamentos: (equipRes.data || []).map((e: any) => ({
         nome: e.equipamentos?.nome || '—',

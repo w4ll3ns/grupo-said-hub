@@ -32,6 +32,7 @@ export interface RDOPdfData {
     endereco: string | null;
     data_inicio: string | null;
     prazo_contratual_dias: number | null;
+    responsavel: string | null;
   };
   funcionarios: {
     nome: string;
@@ -41,6 +42,7 @@ export interface RDOPdfData {
     horario_entrada: string | null;
     horario_saida: string | null;
     horario_intervalo: string | null;
+    local_trabalho: string | null;
   }[];
   equipamentos: {
     nome: string;
@@ -71,37 +73,67 @@ export interface RDOPdfData {
 }
 
 const COLORS = {
-  headerBg: [26, 115, 232] as [number, number, number],       // #1a73e8
+  headerBg: [26, 115, 232] as [number, number, number],
   headerText: [255, 255, 255] as [number, number, number],
-  sectionBg: [55, 65, 81] as [number, number, number],        // gray-700
+  sectionBg: [55, 65, 81] as [number, number, number],
   sectionText: [255, 255, 255] as [number, number, number],
-  lightBg: [243, 244, 246] as [number, number, number],       // gray-100
-  border: [209, 213, 219] as [number, number, number],        // gray-300
-  text: [31, 41, 55] as [number, number, number],             // gray-800
-  mutedText: [107, 114, 128] as [number, number, number],     // gray-500
+  lightBg: [243, 244, 246] as [number, number, number],
+  border: [209, 213, 219] as [number, number, number],
+  text: [31, 41, 55] as [number, number, number],
+  mutedText: [107, 114, 128] as [number, number, number],
   greenBg: [220, 252, 231] as [number, number, number],
   greenText: [22, 101, 52] as [number, number, number],
   yellowBg: [254, 249, 195] as [number, number, number],
   yellowText: [133, 77, 14] as [number, number, number],
 };
 
+// No emojis — jsPDF/helvetica doesn't support them
 const climaLabels: Record<string, string> = {
-  ensolarado: '☀ Ensolarado',
-  nublado: '☁ Nublado',
-  chuvoso: '🌧 Chuvoso',
-  tempestade: '⛈ Tempestade',
+  ensolarado: 'Claro',
+  nublado: 'Nublado',
+  chuvoso: 'Chuvoso',
+  tempestade: 'Tempestade',
 };
 
 const condicaoLabels: Record<string, string> = {
-  praticavel: 'Praticável',
-  impraticavel: 'Impraticável',
+  praticavel: 'Praticavel',
+  impraticavel: 'Impraticavel',
 };
 
 const statusLabels: Record<string, string> = {
   em_andamento: 'Em Andamento',
-  concluido: 'Concluído',
-  nao_iniciado: 'Não Iniciado',
+  concluido: 'Concluido',
+  nao_iniciado: 'Nao Iniciado',
 };
+
+/** Strip seconds: "07:00:00" → "07:00" */
+function formatTime(t: string | null): string {
+  if (!t) return '--';
+  const parts = t.split(':');
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : t;
+}
+
+/** Calculate worked hours from entry/exit/interval */
+function calcWorkedHours(
+  entrada: string | null,
+  saida: string | null,
+  intInicio: string | null,
+  intFim: string | null
+): string {
+  if (!entrada || !saida) return '--';
+  const toMin = (t: string) => {
+    const p = t.split(':').map(Number);
+    return p[0] * 60 + p[1];
+  };
+  let total = toMin(saida) - toMin(entrada);
+  if (intInicio && intFim) {
+    total -= toMin(intFim) - toMin(intInicio);
+  }
+  if (total <= 0) return '--';
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 async function loadImageAsBase64(url: string): Promise<string | null> {
   try {
@@ -118,6 +150,24 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
+function drawSectionHeader(doc: jsPDF, title: string, x: number, y: number, width: number): number {
+  doc.setFillColor(...COLORS.sectionBg);
+  doc.rect(x, y, width, 7, 'F');
+  doc.setTextColor(...COLORS.sectionText);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, x + 3, y + 5);
+  return y + 9;
+}
+
+function checkPageBreak(doc: jsPDF, y: number, needed: number, margin: number): number {
+  if (y + needed > 285) {
+    doc.addPage();
+    return margin;
+  }
+  return y;
+}
+
 export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = 210;
@@ -128,7 +178,7 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
   const rdoDate = new Date(data.rdo.data + 'T00:00:00');
   const formattedDate = format(rdoDate, 'dd/MM/yyyy');
   const diaSemana = format(rdoDate, 'EEEE', { locale: ptBR });
-  const rdoNumero = data.rdo.numero ? String(data.rdo.numero) : '—';
+  const rdoNumero = data.rdo.numero ? String(data.rdo.numero) : '--';
   const statusLabel = data.rdo.status === 'finalizado' ? 'Aprovado' : 'Rascunho';
 
   // =========== TOP BAR ===========
@@ -137,31 +187,27 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
   doc.setTextColor(...COLORS.headerText);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Relatório ${formattedDate}  n° ${rdoNumero}`, margin, 8);
+  doc.text(`Relatorio ${formattedDate}  n. ${rdoNumero}`, margin, 8);
 
   // Status badge
-  if (data.rdo.status === 'finalizado') {
-    doc.setFillColor(...COLORS.greenBg);
-    doc.roundedRect(pageWidth - margin - 28, 3, 26, 6, 1, 1, 'F');
-    doc.setTextColor(...COLORS.greenText);
-    doc.setFontSize(7);
-    doc.text(statusLabel, pageWidth - margin - 15, 7.5, { align: 'center' });
-  } else {
-    doc.setFillColor(...COLORS.yellowBg);
-    doc.roundedRect(pageWidth - margin - 28, 3, 26, 6, 1, 1, 'F');
-    doc.setTextColor(...COLORS.yellowText);
-    doc.setFontSize(7);
-    doc.text(statusLabel, pageWidth - margin - 15, 7.5, { align: 'center' });
-  }
+  const badgeBg = data.rdo.status === 'finalizado' ? COLORS.greenBg : COLORS.yellowBg;
+  const badgeText = data.rdo.status === 'finalizado' ? COLORS.greenText : COLORS.yellowText;
+  doc.setFillColor(...badgeBg);
+  doc.roundedRect(pageWidth - margin - 28, 3, 26, 6, 1, 1, 'F');
+  doc.setTextColor(...badgeText);
+  doc.setFontSize(7);
+  doc.text(statusLabel, pageWidth - margin - 15, 7.5, { align: 'center' });
 
   y = 16;
 
   // =========== HEADER INFO BOX ===========
+  // Now includes Contrato in right panel
+  const headerH = 24;
   doc.setDrawColor(...COLORS.border);
   doc.setLineWidth(0.3);
-  doc.rect(margin, y, contentWidth, 22);
+  doc.rect(margin, y, contentWidth, headerH);
 
-  // Left: Company name
+  // Left: Company name + CNPJ
   doc.setTextColor(...COLORS.text);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
@@ -173,48 +219,52 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
     doc.text(`CNPJ: ${data.empresa.cnpj}`, margin + 4, y + 13);
   }
 
-  // Right: RDO info
-  const rightCol = margin + contentWidth * 0.55;
+  // Right panel: Relatório n°, Data, Dia, Contrato
+  const rightCol = margin + contentWidth * 0.52;
   doc.setLineWidth(0.3);
-  doc.line(rightCol - 4, y, rightCol - 4, y + 22);
+  doc.line(rightCol - 4, y, rightCol - 4, y + headerH);
 
-  const infoLabels = ['Relatório n°', 'Data relatório', 'Dia da semana'];
-  const infoValues = [rdoNumero, formattedDate, diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)];
+  const infoLabels = ['Relatorio n.', 'Data relatorio', 'Dia da semana', 'Contrato'];
+  const infoValues = [
+    rdoNumero,
+    formattedDate,
+    diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1),
+    data.obra.contrato || '--',
+  ];
 
   infoLabels.forEach((label, i) => {
-    const rowY = y + 6 + i * 5.5;
+    const rowY = y + 5.5 + i * 4.8;
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...COLORS.mutedText);
     doc.text(label, rightCol, rowY);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...COLORS.text);
-    doc.text(infoValues[i], rightCol + 35, rowY);
+    doc.text(infoValues[i], rightCol + 32, rowY);
   });
 
-  y += 26;
+  y += headerH + 4;
 
   // =========== SECTION: Dados da Obra ===========
-  y = drawSectionHeader(doc, 'Relatório Diário de Obra (RDO)', margin, y, contentWidth);
+  y = drawSectionHeader(doc, 'Relatorio Diario de Obra (RDO)', margin, y, contentWidth);
 
-  // Obra info - 2 columns
-  const prazoContratual = data.obra.prazo_contratual_dias || 0;
-  let prazoDecorrido = 0;
-  let prazoVencer = 0;
-  if (data.obra.data_inicio) {
+  const prazoContratual = data.obra.prazo_contratual_dias;
+  let prazoDecorrido: number | null = null;
+  let prazoVencer: number | null = null;
+  if (prazoContratual && data.obra.data_inicio) {
     const inicio = new Date(data.obra.data_inicio + 'T00:00:00');
     prazoDecorrido = Math.max(0, differenceInCalendarDays(rdoDate, inicio));
     prazoVencer = Math.max(0, prazoContratual - prazoDecorrido);
   }
 
+  const fmtPrazo = (v: number | null) => (v != null ? `${v} dias` : '--');
+
   const obraRows = [
-    ['Obra:', data.obra.nome, 'Prazo contratual:', `${prazoContratual} dias`],
-    ['Local:', data.obra.local || data.obra.endereco || '—', 'Prazo decorrido:', `${prazoDecorrido} dias`],
-    ['Contratante:', data.obra.contratante || '—', 'Prazo a vencer:', `${prazoVencer} dias`],
+    ['Obra:', data.obra.nome, 'Prazo contratual:', fmtPrazo(prazoContratual)],
+    ['Local:', data.obra.local || data.obra.endereco || '--', 'Prazo decorrido:', fmtPrazo(prazoDecorrido)],
+    ['Contratante:', data.obra.contratante || '--', 'Prazo a vencer:', fmtPrazo(prazoVencer)],
+    ['Responsavel:', data.obra.responsavel || '--', '', ''],
   ];
-  if (data.obra.contrato) {
-    obraRows.push(['Contrato:', data.obra.contrato, '', '']);
-  }
 
   autoTable(doc, {
     startY: y,
@@ -232,48 +282,96 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
 
   y = (doc as any).lastAutoTable.finalY + 2;
 
-  // =========== SECTION: Horário e Clima ===========
-  y = drawSectionHeader(doc, 'Horário de Trabalho / Condição Climática', margin, y, contentWidth);
+  // =========== SECTION: Horário e Clima (redesigned) ===========
+  y = drawSectionHeader(doc, 'Horario de Trabalho / Condicao Climatica', margin, y, contentWidth);
 
-  const horaEntrada = data.rdo.horario_entrada || '—';
-  const horaSaida = data.rdo.horario_saida || '—';
-  const intInicio = data.rdo.horario_intervalo_inicio || '—';
-  const intFim = data.rdo.horario_intervalo_fim || '—';
+  const horaEntrada = formatTime(data.rdo.horario_entrada);
+  const horaSaida = formatTime(data.rdo.horario_saida);
+  const intInicio = formatTime(data.rdo.horario_intervalo_inicio);
+  const intFim = formatTime(data.rdo.horario_intervalo_fim);
+  const horasTrabalhadas = calcWorkedHours(
+    data.rdo.horario_entrada,
+    data.rdo.horario_saida,
+    data.rdo.horario_intervalo_inicio,
+    data.rdo.horario_intervalo_fim
+  );
 
-  autoTable(doc, {
-    startY: y,
-    margin: { left: margin, right: margin },
-    head: [['Horário', 'Horas', 'Período', 'Clima', 'Condição']],
-    body: [
-      [`Entrada: ${horaEntrada}`, '', 'Manhã', climaLabels[data.rdo.clima_manha] || data.rdo.clima_manha, condicaoLabels[data.rdo.condicao_manha] || data.rdo.condicao_manha],
-      [`Saída: ${horaSaida}`, '', 'Tarde', climaLabels[data.rdo.clima_tarde] || data.rdo.clima_tarde, condicaoLabels[data.rdo.condicao_tarde] || data.rdo.condicao_tarde],
-      [`Intervalo: ${intInicio} - ${intFim}`, '', '', '', ''],
-    ],
-    theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 2, textColor: COLORS.text },
-    headStyles: { fillColor: COLORS.sectionBg, textColor: COLORS.sectionText, fontSize: 7, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: COLORS.lightBg },
-  });
+  // 3-block layout: Left (horários) | Center (horas) | Right (clima)
+  const blockH = 22;
+  const leftW = contentWidth * 0.32;
+  const centerW = contentWidth * 0.2;
+  const rightW = contentWidth - leftW - centerW;
 
-  y = (doc as any).lastAutoTable.finalY + 2;
+  doc.setDrawColor(...COLORS.border);
+  doc.setLineWidth(0.2);
+  doc.rect(margin, y, leftW, blockH);
+  doc.rect(margin + leftW, y, centerW, blockH);
+  doc.rect(margin + leftW + centerW, y, rightW, blockH);
+
+  // Left block: Entrada/Saída/Intervalo
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...COLORS.mutedText);
+  doc.text('Entrada:', margin + 2, y + 6);
+  doc.text('Saida:', margin + 2, y + 11);
+  doc.text('Intervalo:', margin + 2, y + 16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...COLORS.text);
+  doc.text(horaEntrada, margin + 22, y + 6);
+  doc.text(horaSaida, margin + 22, y + 11);
+  doc.text(`${intInicio} - ${intFim}`, margin + 22, y + 16);
+
+  // Center block: Horas trabalhadas
+  doc.setFontSize(6);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...COLORS.mutedText);
+  doc.text('Horas Trab.', margin + leftW + centerW / 2, y + 5, { align: 'center' });
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...COLORS.text);
+  doc.text(horasTrabalhadas, margin + leftW + centerW / 2, y + 15, { align: 'center' });
+
+  // Right block: Clima table
+  const climaX = margin + leftW + centerW;
+  doc.setFontSize(6);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...COLORS.mutedText);
+  doc.text('Periodo', climaX + 2, y + 5);
+  doc.text('Clima', climaX + 18, y + 5);
+  doc.text('Condicao', climaX + rightW - 18, y + 5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...COLORS.text);
+  doc.setFontSize(7);
+  // Manhã
+  doc.text('Manha', climaX + 2, y + 11);
+  doc.text(climaLabels[data.rdo.clima_manha] || data.rdo.clima_manha, climaX + 18, y + 11);
+  doc.text(condicaoLabels[data.rdo.condicao_manha] || data.rdo.condicao_manha, climaX + rightW - 18, y + 11);
+  // Tarde
+  doc.text('Tarde', climaX + 2, y + 17);
+  doc.text(climaLabels[data.rdo.clima_tarde] || data.rdo.clima_tarde, climaX + 18, y + 17);
+  doc.text(condicaoLabels[data.rdo.condicao_tarde] || data.rdo.condicao_tarde, climaX + rightW - 18, y + 17);
+
+  y += blockH + 4;
 
   // =========== SECTION: Mão de Obra ===========
   const presenteFuncs = data.funcionarios.filter((f) => f.presente);
-  y = drawSectionHeader(doc, `Mão de Obra (${presenteFuncs.length})`, margin, y, contentWidth);
+  y = checkPageBreak(doc, y, 20, margin);
+  y = drawSectionHeader(doc, `Mao de Obra (${presenteFuncs.length})`, margin, y, contentWidth);
 
   if (presenteFuncs.length > 0) {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['N°', 'Nome', 'Função', 'Entrada', 'Saída', 'Intervalo', 'Horas']],
+      head: [['N.', 'Nome', 'Funcao', 'Entrada / Saida', 'Intervalo', 'Horas', 'Local']],
       body: presenteFuncs.map((f, i) => [
         String(i + 1),
         f.nome,
-        f.cargo || '—',
-        f.horario_entrada || '—',
-        f.horario_saida || '—',
-        f.horario_intervalo || '—',
-        f.horas != null ? String(f.horas) + 'h' : '—',
+        f.cargo || '--',
+        `${formatTime(f.horario_entrada)} - ${formatTime(f.horario_saida)}`,
+        formatTime(f.horario_intervalo),
+        f.horas != null ? String(f.horas) + 'h' : '--',
+        f.local_trabalho || '',
       ]),
       theme: 'grid',
       styles: { fontSize: 7, cellPadding: 1.5, textColor: COLORS.text },
@@ -281,43 +379,68 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
       alternateRowStyles: { fillColor: COLORS.lightBg },
       columnStyles: {
         0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 45 },
-        2: { cellWidth: 30 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 28 },
+        6: { fontStyle: 'italic', textColor: COLORS.mutedText },
       },
     });
     y = (doc as any).lastAutoTable.finalY + 2;
   } else {
     doc.setFontSize(8);
     doc.setTextColor(...COLORS.mutedText);
-    doc.text('Nenhum funcionário registrado.', margin + 4, y + 5);
+    doc.text('Nenhum funcionario registrado.', margin + 4, y + 5);
     y += 10;
   }
 
-  // Page break check
-  if (y > 240) { doc.addPage(); y = margin; }
-
-  // =========== SECTION: Equipamentos ===========
+  // =========== SECTION: Equipamentos (grid layout) ===========
+  y = checkPageBreak(doc, y, 20, margin);
   const selEquips = data.equipamentos;
   y = drawSectionHeader(doc, `Equipamentos (${selEquips.length})`, margin, y, contentWidth);
 
   if (selEquips.length > 0) {
-    // Grid layout: 3 columns (nome | qtd | status)
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['Equipamento', 'Qtd', 'Horas Uso', 'Status']],
-      body: selEquips.map((e) => [
-        e.nome,
-        String(e.quantidade),
-        e.horas_uso != null ? String(e.horas_uso) + 'h' : '—',
-        e.operacional ? 'Operacional' : 'Inoperante',
-      ]),
-      theme: 'grid',
-      styles: { fontSize: 7, cellPadding: 1.5, textColor: COLORS.text },
-      headStyles: { fillColor: COLORS.sectionBg, textColor: COLORS.sectionText, fontSize: 7, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: COLORS.lightBg },
-    });
-    y = (doc as any).lastAutoTable.finalY + 2;
+    const gridCols = 6;
+    const cellW = contentWidth / gridCols;
+    const cellH = 12;
+
+    for (let i = 0; i < selEquips.length; i += gridCols) {
+      y = checkPageBreak(doc, y, cellH + 2, margin);
+      const rowEquips = selEquips.slice(i, i + gridCols);
+
+      for (let j = 0; j < rowEquips.length; j++) {
+        const e = rowEquips[j];
+        const cx = margin + j * cellW;
+
+        // Cell border
+        doc.setDrawColor(...COLORS.border);
+        doc.setLineWidth(0.2);
+        doc.rect(cx, y, cellW, cellH);
+
+        // Name (top)
+        doc.setFontSize(6);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...COLORS.text);
+        const nameLines = doc.splitTextToSize(e.nome, cellW - 3);
+        doc.text(nameLines[0] || '', cx + 1.5, y + 4);
+
+        // Quantity (bottom)
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...COLORS.mutedText);
+        doc.text(String(e.quantidade), cx + cellW / 2, y + 10, { align: 'center' });
+      }
+
+      // Fill empty cells in last row
+      for (let j = rowEquips.length; j < gridCols; j++) {
+        const cx = margin + j * cellW;
+        doc.setDrawColor(...COLORS.border);
+        doc.setLineWidth(0.2);
+        doc.rect(cx, y, cellW, cellH);
+      }
+
+      y += cellH;
+    }
+    y += 2;
   } else {
     doc.setFontSize(8);
     doc.setTextColor(...COLORS.mutedText);
@@ -325,21 +448,17 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
     y += 10;
   }
 
-  if (y > 240) { doc.addPage(); y = margin; }
-
-  // =========== SECTION: Atividades ===========
+  // =========== SECTION: Atividades (simplified: Descrição + Status) ===========
+  y = checkPageBreak(doc, y, 20, margin);
   y = drawSectionHeader(doc, `Atividades (${data.atividades.length})`, margin, y, contentWidth);
 
   if (data.atividades.length > 0) {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['N°', 'Descrição', 'Quantidade', 'Unidade', 'Status']],
-      body: data.atividades.map((a, i) => [
-        String(i + 1),
+      head: [['Descricao', 'Status']],
+      body: data.atividades.map((a) => [
         a.descricao,
-        a.quantidade != null ? String(a.quantidade) : '—',
-        a.unidade || '—',
         statusLabels[a.status] || a.status,
       ]),
       theme: 'grid',
@@ -347,8 +466,8 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
       headStyles: { fillColor: COLORS.sectionBg, textColor: COLORS.sectionText, fontSize: 7, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: COLORS.lightBg },
       columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 80 },
+        0: { cellWidth: contentWidth - 30 },
+        1: { cellWidth: 30, halign: 'center' },
       },
     });
     y = (doc as any).lastAutoTable.finalY + 2;
@@ -361,8 +480,8 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
 
   // =========== SECTION: Observações ===========
   if (data.rdo.observacoes) {
-    if (y > 250) { doc.addPage(); y = margin; }
-    y = drawSectionHeader(doc, 'Observações', margin, y, contentWidth);
+    y = checkPageBreak(doc, y, 20, margin);
+    y = drawSectionHeader(doc, 'Observacoes', margin, y, contentWidth);
     doc.setFontSize(8);
     doc.setTextColor(...COLORS.text);
     const lines = doc.splitTextToSize(data.rdo.observacoes, contentWidth - 8);
@@ -372,14 +491,14 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
 
   // =========== SECTION: Fotos ===========
   if (data.fotos.length > 0) {
-    if (y > 200) { doc.addPage(); y = margin; }
-    y = drawSectionHeader(doc, `Registro Fotográfico (${data.fotos.length})`, margin, y, contentWidth);
+    y = checkPageBreak(doc, y, 60, margin);
+    y = drawSectionHeader(doc, `Registro Fotografico (${data.fotos.length})`, margin, y, contentWidth);
 
     const colWidth = (contentWidth - 4) / 2;
     const imgHeight = 50;
 
     for (let i = 0; i < data.fotos.length; i += 2) {
-      if (y + imgHeight + 12 > 285) { doc.addPage(); y = margin; }
+      y = checkPageBreak(doc, y, imgHeight + 12, margin);
 
       for (let j = 0; j < 2 && i + j < data.fotos.length; j++) {
         const foto = data.fotos[i + j];
@@ -393,7 +512,7 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
             doc.rect(x, y, colWidth, imgHeight, 'F');
             doc.setFontSize(7);
             doc.setTextColor(...COLORS.mutedText);
-            doc.text('Imagem indisponível', x + colWidth / 2, y + imgHeight / 2, { align: 'center' });
+            doc.text('Imagem indisponivel', x + colWidth / 2, y + imgHeight / 2, { align: 'center' });
           }
         }
         if (foto.legenda) {
@@ -406,62 +525,89 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
     }
   }
 
-  // =========== SECTION: Assinaturas ===========
-  if (y > 240) { doc.addPage(); y = margin; }
-  y = drawSectionHeader(doc, 'Aprovações / Assinaturas', margin, y, contentWidth);
+  // =========== SECTION: Assinaturas (redesigned) ===========
+  y = checkPageBreak(doc, y, 50, margin);
+  y = drawSectionHeader(doc, 'Aprovacoes / Assinaturas', margin, y, contentWidth);
 
   const contratada = data.aprovacoes.find((a) => a.tipo === 'contratada');
   const contratante = data.aprovacoes.find((a) => a.tipo === 'contratante');
   const halfW = (contentWidth - 4) / 2;
+  const sigBoxH = 42;
 
-  // Contratada box
-  doc.setDrawColor(...COLORS.border);
-  doc.rect(margin, y, halfW, 30);
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.text);
-  doc.text('CONTRATADA', margin + halfW / 2, y + 5, { align: 'center' });
+  const drawSignatureBox = (
+    label: string,
+    person: typeof contratada | undefined,
+    x: number
+  ) => {
+    doc.setDrawColor(...COLORS.border);
+    doc.setLineWidth(0.3);
+    doc.rect(x, y, halfW, sigBoxH);
 
-  if (contratada) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(contratada.nome, margin + 4, y + 12);
-    if (contratada.cargo) doc.text(`Cargo: ${contratada.cargo}`, margin + 4, y + 16);
-    if (contratada.matricula) doc.text(`Matrícula: ${contratada.matricula}`, margin + 4, y + 20);
-    if (contratada.aprovado_em) {
-      doc.setTextColor(...COLORS.greenText);
-      doc.text(`Aprovado: ${format(new Date(contratada.aprovado_em), 'dd/MM/yyyy HH:mm')}`, margin + 4, y + 26);
-    }
-  } else {
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text('Pendente', margin + halfW / 2, y + 18, { align: 'center' });
-  }
-
-  // Contratante box
-  const rightX = margin + halfW + 4;
-  doc.setDrawColor(...COLORS.border);
-  doc.rect(rightX, y, halfW, 30);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.text);
-  doc.text('CONTRATANTE', rightX + halfW / 2, y + 5, { align: 'center' });
-
-  if (contratante) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    // Title
+    doc.setFillColor(...COLORS.lightBg);
+    doc.rect(x, y, halfW, 7, 'F');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
     doc.setTextColor(...COLORS.text);
-    doc.text(contratante.nome, rightX + 4, y + 12);
-    if (contratante.cargo) doc.text(`Cargo: ${contratante.cargo}`, rightX + 4, y + 16);
-    if (contratante.email) doc.text(`Email: ${contratante.email}`, rightX + 4, y + 20);
-    if (contratante.aprovado_em) {
-      doc.setTextColor(...COLORS.greenText);
-      doc.text(`Aprovado: ${format(new Date(contratante.aprovado_em), 'dd/MM/yyyy HH:mm')}`, rightX + 4, y + 26);
+    doc.text(label, x + halfW / 2, y + 5, { align: 'center' });
+
+    if (person) {
+      // Name (large bold)
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...COLORS.text);
+      doc.text(person.nome, x + 4, y + 14);
+
+      // Cargo
+      if (person.cargo) {
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...COLORS.mutedText);
+        doc.text(`Cargo: ${person.cargo}`, x + 4, y + 19);
+      }
+
+      // Matrícula
+      if (person.matricula) {
+        doc.setFontSize(7);
+        doc.text(`Matricula: ${person.matricula}`, x + 4, y + 24);
+      }
+
+      // Email
+      if (person.email) {
+        doc.setFontSize(7);
+        doc.text(`Email: ${person.email}`, x + 4, y + 29);
+      }
+
+      // Approval badge
+      if (person.aprovado_em) {
+        const badgeY = y + sigBoxH - 10;
+        doc.setFillColor(...COLORS.greenBg);
+        doc.roundedRect(x + 3, badgeY, halfW - 6, 8, 1, 1, 'F');
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...COLORS.greenText);
+        doc.text(
+          `Aprovado em ${format(new Date(person.aprovado_em), 'dd/MM/yyyy HH:mm')}`,
+          x + halfW / 2,
+          badgeY + 5.5,
+          { align: 'center' }
+        );
+      } else {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(...COLORS.yellowText);
+        doc.text('Pendente', x + halfW / 2, y + sigBoxH - 6, { align: 'center' });
+      }
+    } else {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(...COLORS.mutedText);
+      doc.text('Pendente', x + halfW / 2, y + sigBoxH / 2 + 4, { align: 'center' });
     }
-  } else {
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text('Pendente', rightX + halfW / 2, y + 18, { align: 'center' });
-  }
+  };
+
+  drawSignatureBox('CONTRATADA', contratada, margin);
+  drawSignatureBox('CONTRATANTE', contratante, margin + halfW + 4);
 
   // =========== FOOTER on each page ===========
   const pageCount = doc.getNumberOfPages();
@@ -469,21 +615,11 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
     doc.setPage(p);
     doc.setFontSize(6);
     doc.setTextColor(...COLORS.mutedText);
-    doc.text(`${data.empresa.nome} — RDO n° ${rdoNumero} — ${formattedDate}`, margin, 293);
-    doc.text(`Página ${p}/${pageCount}`, pageWidth - margin, 293, { align: 'right' });
+    doc.text(`${data.empresa.nome} -- RDO n. ${rdoNumero} -- ${formattedDate}`, margin, 293);
+    doc.text(`Pagina ${p}/${pageCount}`, pageWidth - margin, 293, { align: 'right' });
   }
 
   // Save
   const filename = `RDO_${rdoNumero}_${data.rdo.data}.pdf`;
   doc.save(filename);
-}
-
-function drawSectionHeader(doc: jsPDF, title: string, x: number, y: number, width: number): number {
-  doc.setFillColor(...COLORS.sectionBg);
-  doc.rect(x, y, width, 7, 'F');
-  doc.setTextColor(...COLORS.sectionText);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title, x + 3, y + 5);
-  return y + 9;
 }
