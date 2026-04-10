@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Pencil, Users as UsersIcon } from 'lucide-react';
@@ -18,12 +19,15 @@ import { toast } from 'sonner';
 
 export default function Usuarios() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [editUser, setEditUser] = useState<any>(null);
   const [editNome, setEditNome] = useState('');
   const [editCargo, setEditCargo] = useState('');
   const [editMatricula, setEditMatricula] = useState('');
   const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
   const [selectedPerfil, setSelectedPerfil] = useState<string>('');
+
+  const isSelf = editUser?.id === user?.id;
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ['admin-profiles'],
@@ -52,6 +56,11 @@ export default function Usuarios() {
     },
   });
 
+  const adminPerfilId = useMemo(
+    () => perfis.find((p: any) => p.nome?.toLowerCase() === 'administrador')?.id || '',
+    [perfis]
+  );
+
   const { data: userEmpresas = [] } = useQuery({
     queryKey: ['usuario-empresas', editUser?.id],
     queryFn: async () => {
@@ -79,6 +88,8 @@ export default function Usuarios() {
     setEditNome(profile.nome || '');
     setEditCargo(profile.cargo || '');
     setEditMatricula(profile.matricula || '');
+    setSelectedEmpresas([]);
+    setSelectedPerfil('');
   };
 
   useEffect(() => {
@@ -97,6 +108,24 @@ export default function Usuarios() {
     mutationFn: async () => {
       if (!editUser) return;
 
+      // Self-edit validations
+      if (isSelf) {
+        if (selectedPerfil !== adminPerfilId) {
+          throw new Error('Você não pode remover seu próprio perfil de Administrador');
+        }
+        if (selectedEmpresas.length === 0) {
+          throw new Error('Você não pode ficar sem nenhuma empresa vinculada');
+        }
+      }
+
+      // Validate required fields
+      if (!selectedPerfil) {
+        throw new Error('Selecione um perfil de acesso');
+      }
+      if (selectedEmpresas.length === 0) {
+        throw new Error('Selecione ao menos uma empresa');
+      }
+
       // Update profile
       const { error } = await supabase.from('profiles').update({
         nome: editNome || null,
@@ -105,23 +134,42 @@ export default function Usuarios() {
       }).eq('id', editUser.id);
       if (error) throw error;
 
-      // Sync empresas: delete all, re-insert selected
-      await supabase.from('usuario_empresas').delete().eq('user_id', editUser.id);
-      if (selectedEmpresas.length > 0) {
-        const rows = selectedEmpresas.map((empresa_id) => ({ user_id: editUser.id, empresa_id }));
-        const { error: eErr } = await supabase.from('usuario_empresas').insert(rows);
-        if (eErr) throw eErr;
+      // Sync empresas: compute diff instead of delete-all
+      const currentEmpresas = userEmpresas as string[];
+      const toAddEmpresas = selectedEmpresas.filter((id) => !currentEmpresas.includes(id));
+      const toRemoveEmpresas = currentEmpresas.filter((id) => !selectedEmpresas.includes(id));
+
+      if (toRemoveEmpresas.length > 0) {
+        const { error: delErr } = await supabase
+          .from('usuario_empresas')
+          .delete()
+          .eq('user_id', editUser.id)
+          .in('empresa_id', toRemoveEmpresas);
+        if (delErr) throw delErr;
+      }
+      if (toAddEmpresas.length > 0) {
+        const rows = toAddEmpresas.map((empresa_id) => ({ user_id: editUser.id, empresa_id }));
+        const { error: insErr } = await supabase.from('usuario_empresas').insert(rows);
+        if (insErr) throw insErr;
       }
 
-      // Sync perfil: delete all, re-insert selected
-      await supabase.from('usuario_perfis').delete().eq('user_id', editUser.id);
-      if (selectedPerfil) {
-        const { error: pErr } = await supabase.from('usuario_perfis').insert({ user_id: editUser.id, perfil_id: selectedPerfil });
-        if (pErr) throw pErr;
+      // Sync perfil: only change if different
+      const currentPerfil = (userPerfil as string) || '';
+      if (selectedPerfil !== currentPerfil) {
+        if (currentPerfil) {
+          await supabase.from('usuario_perfis').delete().eq('user_id', editUser.id);
+        }
+        if (selectedPerfil) {
+          const { error: pErr } = await supabase.from('usuario_perfis').insert({ user_id: editUser.id, perfil_id: selectedPerfil });
+          if (pErr) throw pErr;
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['permissions'] });
+      queryClient.invalidateQueries({ queryKey: ['isAdmin'] });
+      queryClient.invalidateQueries({ queryKey: ['empresas'] });
       toast.success('Usuário atualizado!');
       closeDialog();
     },
@@ -130,6 +178,9 @@ export default function Usuarios() {
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, ativo }: { id: string; ativo: boolean }) => {
+      if (id === user?.id && !ativo) {
+        throw new Error('Você não pode desativar seu próprio usuário');
+      }
       const { error } = await supabase.from('profiles').update({ ativo }).eq('id', id);
       if (error) throw error;
     },
@@ -146,6 +197,11 @@ export default function Usuarios() {
   };
 
   const toggleEmpresa = (empresaId: string) => {
+    // If self-editing and trying to uncheck last empresa, block
+    if (isSelf && selectedEmpresas.includes(empresaId) && selectedEmpresas.length === 1) {
+      toast.error('Você não pode ficar sem nenhuma empresa vinculada');
+      return;
+    }
     setSelectedEmpresas((prev) =>
       prev.includes(empresaId) ? prev.filter((id) => id !== empresaId) : [...prev, empresaId]
     );
@@ -201,7 +257,12 @@ export default function Usuarios() {
                             {p.nome ? p.nome.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() : '?'}
                           </AvatarFallback>
                         </Avatar>
-                        <span className="font-medium">{p.nome || '—'}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{p.nome || '—'}</span>
+                          {p.id === user?.id && (
+                            <Badge variant="outline" className="text-xs">Você</Badge>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>{p.cargo || '—'}</TableCell>
@@ -210,6 +271,7 @@ export default function Usuarios() {
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={p.ativo}
+                          disabled={p.id === user?.id}
                           onCheckedChange={(checked) => toggleMutation.mutate({ id: p.id, ativo: checked })}
                         />
                         <Badge variant={p.ativo ? 'default' : 'secondary'}>
@@ -240,7 +302,10 @@ export default function Usuarios() {
       <Dialog open={!!editUser} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Editar Usuário</DialogTitle>
+            <DialogTitle>
+              Editar Usuário
+              {isSelf && <Badge variant="outline" className="ml-2 text-xs">Você</Badge>}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -260,7 +325,11 @@ export default function Usuarios() {
 
             <div>
               <Label>Perfil de Acesso</Label>
-              <Select value={selectedPerfil} onValueChange={setSelectedPerfil}>
+              <Select
+                value={selectedPerfil}
+                onValueChange={setSelectedPerfil}
+                disabled={isSelf && selectedPerfil === adminPerfilId}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um perfil" />
                 </SelectTrigger>
@@ -270,6 +339,11 @@ export default function Usuarios() {
                   ))}
                 </SelectContent>
               </Select>
+              {isSelf && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Você não pode alterar seu próprio perfil de Administrador
+                </p>
+              )}
             </div>
 
             <div>
