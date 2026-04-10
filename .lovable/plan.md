@@ -1,73 +1,89 @@
 
-# Fase 1 — Auth + Estrutura Base do "Gestão Grupo Said"
+# Módulo Financeiro — Cadastros Base
 
 ## Objetivo
-Construir a fundação do sistema SaaS multiempresa: autenticação, estrutura de dados base, sistema de permissões e layout principal com sidebar e topbar.
+Criar as 5 tabelas de cadastros base do módulo financeiro com CRUD completo, RLS por empresa_id e telas funcionais.
 
 ---
 
-## 1. Habilitar Lovable Cloud
-- Ativar Supabase gerenciado para o projeto
+## 1. Migração de banco de dados
 
-## 2. Identidade Visual e Design System
-- Paleta sóbria e profissional (será ajustada quando o usuário enviar a logo/cores)
-- Dark mode com toggle
-- Tipografia limpa, espaçamento generoso, locale pt-BR em toda a interface
-- Configurar CSS variables e Tailwind para a paleta do sistema
+Criar uma única migração com as seguintes tabelas:
 
-## 3. Banco de Dados — Tabelas Estruturais
-Criar migrações para as tabelas base com RLS por `empresa_id`:
+**plano_receitas** — id, empresa_id (FK empresas), categoria, subcategoria, ativa, created_at, updated_at
+- RLS: admins full access; users filtrados por empresa_id via `user_belongs_to_empresa`
 
-- **empresas** — id, nome, cnpj, logo_url, ativa, created_at, updated_at
-- **user_roles** (enum: admin, financeiro, compras, engenharia, solicitante) — tabela separada conforme boas práticas de segurança
-- **perfis** — id, nome, descricao, empresa_id, created_at
-- **perfil_permissoes** — perfil_id, modulo, funcionalidade, visualizar, criar, editar, excluir, aprovar
-- **usuario_empresas** — user_id, empresa_id (vínculo multiempresa)
-- **usuario_obras** — user_id, obra_id (preparar para módulo RDO)
-- **profiles** — id (FK auth.users), nome, cargo, matricula, foto_url, ativo
+**plano_despesas** — id, empresa_id (FK empresas), categoria, subcategoria, ativa, created_at, updated_at
+- Mesma estrutura e RLS do plano_receitas
 
-RLS policies com security definer functions para isolamento por empresa.
+**contas_bancarias** — id, empresa_id (FK empresas), nome, banco, agencia, conta, tipo (corrente/poupança/caixa), saldo_inicial (numeric), ativa, created_at, updated_at
+- RLS por empresa_id
 
-## 4. Autenticação
-- Tela de login com e-mail/senha (visual profissional, em português)
-- Tela de cadastro (registro inicial)
-- Reset de senha com página `/reset-password`
-- Proteção de rotas autenticadas
-- Hook `useAuth` para estado de sessão
+**formas_pagamento** — id, empresa_id (FK empresas), nome (boleto/pix/transferência/dinheiro/NF/cartão), ativa, created_at, updated_at
+- RLS por empresa_id
 
-## 5. Layout Principal
-- **Sidebar** agrupada por módulos (Financeiro, RDO, Compras, Administração)
-  - Itens visíveis apenas conforme permissões do usuário
-  - Colapsável com ícones no modo mini
-- **Topbar** com:
-  - Seletor de empresa ativa
-  - Seletor de período global
-  - Ícone de notificações (placeholder)
-  - Menu de perfil com foto, nome e logout
-- Layout responsivo mobile-first
+**centros_custo** — id, empresa_id (FK empresas), nome, descricao, ativo, created_at, updated_at
+- RLS por empresa_id
 
-## 6. Sistema de Permissões
-- Hook `usePermissions()` que consulta perfil_permissoes do usuário logado
-- Controle de visibilidade de menus, botões e rotas no frontend
-- Função `has_permission()` no Supabase (security definer) para RLS
-- Perfis padrão pré-cadastrados: Administrador, Financeiro, Compras, Engenharia, Solicitante Básico
+Todas as tabelas terão trigger `update_updated_at_column` e políticas RLS consistentes:
+- Admin: ALL
+- User autenticado: SELECT/INSERT/UPDATE/DELETE filtrado por `user_belongs_to_empresa(auth.uid(), empresa_id)`
 
-## 7. Módulo Administração (telas)
-- **Gerenciamento de Empresas** — CRUD de empresas do grupo
-- **Gerenciamento de Usuários** — CRUD com nome, e-mail, cargo, matrícula, foto, perfis, empresas vinculadas, status ativo/inativo
-- **Gerenciamento de Perfis** — CRUD de perfis com matriz de permissões editável (checkboxes por módulo/funcionalidade)
+## 2. Sidebar — adicionar itens de cadastro
 
-## 8. Seeds Iniciais
-- 2 empresas fictícias do Grupo Said
-- 5 usuários com os 5 perfis padrão
-- Permissões completas para cada perfil
+Adicionar no grupo Financeiro da sidebar os novos itens (já existem Plano de Contas e outros; vamos mapear as rotas de cadastro dentro de subpáginas do financeiro):
+- Contas Bancárias → `/financeiro/contas-bancarias`
+- Formas de Pagamento → `/financeiro/formas-pagamento`
+- Centros de Custo → `/financeiro/centros-custo`
 
-## 9. Páginas placeholder dos módulos
-- Dashboard Financeiro (placeholder)
-- Dashboard RDO (placeholder)
-- Dashboard Compras (placeholder)
-- Essas serão implementadas nas próximas fases
+O "Plano de Contas" já existe na sidebar — usaremos essa rota para exibir Receitas e Despesas em abas.
+
+## 3. Páginas CRUD
+
+Criar 4 páginas com padrão consistente (TanStack Query, React Hook Form + Zod, Dialog para criar/editar, tabela com busca):
+
+**`/financeiro/plano-contas`** — Tabs "Receitas" e "Despesas"
+- Tabela com categoria, subcategoria, status
+- Dialog para criar/editar com campos categoria, subcategoria
+- Botão ativar/desativar
+
+**`/financeiro/contas-bancarias`** — CRUD de contas bancárias
+- Tabela com nome, banco, agência, conta, tipo, saldo inicial, status
+- Dialog com formulário validado (Zod)
+
+**`/financeiro/formas-pagamento`** — CRUD simples
+- Tabela com nome e status
+- Dialog de criação/edição
+
+**`/financeiro/centros-custo`** — CRUD simples
+- Tabela com nome, descrição, status
+- Dialog de criação/edição
+
+Todas as telas filtram por `empresaAtiva.id` do hook `useEmpresa`.
+
+## 4. Rotas
+
+Registrar no `App.tsx`:
+- `/financeiro/plano-contas`
+- `/financeiro/contas-bancarias`
+- `/financeiro/formas-pagamento`
+- `/financeiro/centros-custo`
+
+## 5. Seeds
+
+Inserir dados iniciais para as 2 empresas existentes:
+- 5 categorias de receita com subcategorias
+- 8 categorias de despesa com subcategorias
+- 3 contas bancárias por empresa
+- 6 formas de pagamento padrão por empresa
+- 4 centros de custo por empresa
 
 ---
 
-**Resultado esperado:** Sistema funcional com login, controle de acesso completo, sidebar dinâmica por permissão, seletor de empresa e CRUD de usuários/perfis — pronto para receber os módulos operacionais nas próximas fases.
+## Detalhes técnicos
+
+- Cada página segue o padrão visual já existente (Empresas.tsx como referência)
+- Formulários com `react-hook-form` + `zodResolver`, validação em pt-BR
+- Valores monetários formatados como BRL
+- Todos os queries usam `empresa_id = empresaAtiva.id`
+- Componente reutilizável `CrudPage` ou pattern comum para evitar duplicação
