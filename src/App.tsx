@@ -71,6 +71,11 @@ const App = () => (
               <Route path="/financeiro/centros-custo" element={<CentrosCusto />} />
               <Route path="/financeiro/contas-pagar" element={<ContasPagar />} />
               <Route path="/financeiro/contas-receber" element={<ContasReceber />} />
+              <Route path="/financeiro/lancamentos" element={<Lancamentos />} />
+              <Route path="/financeiro/transferencias" element={<Transferencias />} />
+              <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixa />} />
+              <Route path="/financeiro/dre" element={<DRE />} />
+              <Route path="/financeiro/metas" element={<Metas />} />
               {/* RDO */}
               <Route path="/rdo" element={<RDODashboard />} />
               <Route path="/rdo/relatorios" element={<Relatorios />} />
