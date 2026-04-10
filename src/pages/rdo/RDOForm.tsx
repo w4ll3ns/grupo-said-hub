@@ -246,7 +246,7 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
 
   const saveMutation = useMutation({
     mutationFn: async (finalizar: boolean) => {
-      const rdoPayload: Record<string, unknown> = {
+      const rdoPayload = {
         empresa_id: empresaAtiva!.id,
         obra_id: obraId,
         data: rdoData,
@@ -260,14 +260,14 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
         condicao_tarde: condicaoTarde,
         observacoes: observacoes || null,
         status: finalizar ? 'finalizado' : 'rascunho',
-      };
+      } as any;
 
       let id = rdoId;
       if (isEditing) {
         const { error } = await supabase.from('rdos').update(rdoPayload).eq('id', rdoId!);
         if (error) throw error;
       } else {
-        const { data: created, error } = await supabase.from('rdos').insert(rdoPayload).select('id').single();
+        const { data: created, error } = await supabase.from('rdos').insert(rdoPayload as any).select('id').single();
         if (error) throw error;
         id = created.id;
       }
