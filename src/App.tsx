@@ -15,6 +15,10 @@ import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 
 import FinanceiroDashboard from "./pages/financeiro/Dashboard";
+import PlanoContas from "./pages/financeiro/PlanoContas";
+import ContasBancarias from "./pages/financeiro/ContasBancarias";
+import FormasPagamento from "./pages/financeiro/FormasPagamento";
+import CentrosCusto from "./pages/financeiro/CentrosCusto";
 import RDODashboard from "./pages/rdo/Dashboard";
 import ComprasDashboard from "./pages/compras/Dashboard";
 
@@ -50,6 +54,10 @@ const App = () => (
 
               {/* Financeiro */}
               <Route path="/financeiro" element={<FinanceiroDashboard />} />
+              <Route path="/financeiro/plano-contas" element={<PlanoContas />} />
+              <Route path="/financeiro/contas-bancarias" element={<ContasBancarias />} />
+              <Route path="/financeiro/formas-pagamento" element={<FormasPagamento />} />
+              <Route path="/financeiro/centros-custo" element={<CentrosCusto />} />
 
               {/* RDO */}
               <Route path="/rdo" element={<RDODashboard />} />

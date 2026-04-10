@@ -47,6 +47,9 @@ const menuGroups = [
       { title: 'DRE', url: '/financeiro/dre', icon: FileText, funcionalidade: 'dre' },
       { title: 'Metas', url: '/financeiro/metas', icon: Target, funcionalidade: 'metas' },
       { title: 'Plano de Contas', url: '/financeiro/plano-contas', icon: ClipboardList, funcionalidade: 'plano_contas' },
+      { title: 'Contas Bancárias', url: '/financeiro/contas-bancarias', icon: Wallet, funcionalidade: 'contas_bancarias' },
+      { title: 'Formas de Pgto', url: '/financeiro/formas-pagamento', icon: Receipt, funcionalidade: 'formas_pagamento' },
+      { title: 'Centros de Custo', url: '/financeiro/centros-custo', icon: Target, funcionalidade: 'centros_custo' },
     ],
   },
   {
