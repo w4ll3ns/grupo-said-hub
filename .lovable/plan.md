@@ -1,153 +1,138 @@
 
 
-# Fase 5 — Módulo RDO (Relatório Diário de Obra)
+# Evolução do RDO — Padrão Sodexo/Vale
 
-## Objetivo
-Implementar o módulo RDO completo com cadastros base (Obras, Funcionários, Equipamentos) e o registro de Relatórios Diários de Obra. **Interface mobile-first** para uso em campo.
+Analisei o PDF enviado e identifiquei diversas informações e funcionalidades que faltam no nosso RDO atual. Abaixo o plano completo de adequação.
 
 ---
 
-## 1. Migrações de banco de dados
+## Diferenças identificadas (PDF vs. atual)
 
-### Tabela `obras`
-| Coluna | Tipo | Notas |
-|--------|------|-------|
-| id | uuid PK | |
-| empresa_id | uuid FK empresas | NOT NULL |
-| nome | text | NOT NULL |
-| endereco | text | nullable |
-| responsavel | text | nullable |
-| status | text | 'em_andamento', 'concluida', 'paralisada' |
-| data_inicio | date | nullable |
-| data_previsao | date | nullable |
-| created_at, updated_at | timestamptz | |
+| Funcionalidade | PDF Sodexo/Vale | Nosso RDO atual |
+|---|---|---|
+| Número sequencial do relatório | Sim (n° 281) | Não tem |
+| Contrato / Contratante | Sim | Não tem |
+| Local da obra | Sim | Só endereço na tabela obras |
+| Prazo contratual / decorrido / a vencer | Sim (calculado) | Não tem |
+| Horário de trabalho (entrada/saída/intervalo) | Sim | Não tem |
+| Clima por período (manhã/tarde) | Sim (manhã + tarde separados) | Apenas 1 campo clima |
+| Condição por período (Praticável/Impraticável) | Sim (manhã + tarde) | Apenas 1 campo condição |
+| Mão de obra com entrada/saída/intervalo por funcionário | Sim | Apenas checkbox + horas |
+| Equipamentos com quantidade | Sim (qtd por tipo) | Apenas checkbox + horas uso |
+| Status da atividade | Sim (Em Andamento, Concluído) | Não tem |
+| Fotos anexadas | Sim | Não tem |
+| Aprovação dupla (contratada + contratante) | Sim com data/hora/email | Não tem |
+| Geração de PDF | Formato padrão | Não tem |
 
-### Tabela `funcionarios`
+---
+
+## 1. Migração de banco de dados
+
+### Alterações na tabela `obras`
+- Adicionar: `contrato` (text), `contratante` (text), `local` (text), `prazo_contratual_dias` (integer)
+
+### Alterações na tabela `rdos`
+- Adicionar: `numero` (serial/integer, auto-incremento por empresa), `horario_entrada` (time), `horario_saida` (time), `horario_intervalo_inicio` (time), `horario_intervalo_fim` (time)
+- Alterar clima para dois campos: `clima_manha` (text), `clima_tarde` (text) — substituir `clima`
+- Alterar condição para dois campos: `condicao_manha` (text), `condicao_tarde` (text) — substituir `condicao_trabalho`
+
+### Alterações na tabela `rdo_funcionarios`
+- Adicionar: `horario_entrada` (time), `horario_saida` (time), `horario_intervalo` (text), `local_trabalho` (text)
+
+### Alterações na tabela `rdo_equipamentos`
+- Adicionar: `quantidade` (integer, default 1)
+
+### Alterações na tabela `rdo_atividades`
+- Adicionar: `status` (text — 'em_andamento', 'concluido', 'nao_iniciado')
+
+### Nova tabela `rdo_fotos`
 | Coluna | Tipo | Notas |
-|--------|------|-------|
+|---|---|---|
 | id | uuid PK | |
-| empresa_id | uuid FK empresas | NOT NULL |
+| rdo_id | uuid FK rdos | NOT NULL |
+| url | text | NOT NULL |
+| legenda | text | nullable |
+| created_at | timestamptz | |
+
+### Nova tabela `rdo_aprovacoes`
+| Coluna | Tipo | Notas |
+|---|---|---|
+| id | uuid PK | |
+| rdo_id | uuid FK rdos | NOT NULL |
+| tipo | text | 'contratada' ou 'contratante' |
 | nome | text | NOT NULL |
+| email | text | nullable |
 | cargo | text | nullable |
-| ativo | boolean | default true |
-| created_at, updated_at | timestamptz | |
+| matricula | text | nullable |
+| aprovado_em | timestamptz | nullable |
+| status | text | 'pendente','aprovado','rejeitado' |
 
-### Tabela `equipamentos`
-| Coluna | Tipo | Notas |
-|--------|------|-------|
-| id | uuid PK | |
-| empresa_id | uuid FK empresas | NOT NULL |
-| nome | text | NOT NULL |
-| tipo | text | nullable |
-| ativo | boolean | default true |
-| created_at, updated_at | timestamptz | |
+### Storage bucket `rdo-fotos`
+- Bucket público para upload de fotos do RDO
 
-### Tabela `rdos` (Relatório Diário)
-| Coluna | Tipo | Notas |
-|--------|------|-------|
-| id | uuid PK | |
-| empresa_id | uuid FK empresas | NOT NULL |
-| obra_id | uuid FK obras | NOT NULL |
-| data | date | NOT NULL |
-| clima | text | 'ensolarado','nublado','chuvoso','tempestade' |
-| condicao_trabalho | text | 'normal','parcial','paralisado' |
-| observacoes | text | nullable |
-| status | text | 'rascunho','finalizado' |
-| created_by | uuid | auth.uid() |
-| created_at, updated_at | timestamptz | |
-
-### Tabela `rdo_funcionarios` (presença)
-| Coluna | Tipo | Notas |
-|--------|------|-------|
-| id | uuid PK | |
-| rdo_id | uuid FK rdos | NOT NULL |
-| funcionario_id | uuid FK funcionarios | NOT NULL |
-| presente | boolean | default true |
-| horas | numeric(4,1) | nullable |
-| observacao | text | nullable |
-
-### Tabela `rdo_equipamentos` (uso)
-| Coluna | Tipo | Notas |
-|--------|------|-------|
-| id | uuid PK | |
-| rdo_id | uuid FK rdos | NOT NULL |
-| equipamento_id | uuid FK equipamentos | NOT NULL |
-| horas_uso | numeric(4,1) | nullable |
-| operacional | boolean | default true |
-| observacao | text | nullable |
-
-### Tabela `rdo_atividades` (serviços executados)
-| Coluna | Tipo | Notas |
-|--------|------|-------|
-| id | uuid PK | |
-| rdo_id | uuid FK rdos | NOT NULL |
-| descricao | text | NOT NULL |
-| quantidade | numeric(10,2) | nullable |
-| unidade | text | nullable |
-
-**RLS:** Mesma estratégia — `user_belongs_to_empresa` em todas as tabelas.
+### Função para número sequencial
+- Trigger ou function que gera `numero` auto-incremento por empresa_id
 
 ---
 
-## 2. Páginas — Design Mobile-First
+## 2. Alterações no formulário (RDOForm.tsx)
 
-### Cadastros base (padrão CRUD existente)
-- **`/rdo/obras`** — lista de obras com status badge, botão criar/editar
-- **`/rdo/funcionarios`** — lista com cargo, toggle ativo/inativo
-- **`/rdo/equipamentos`** — lista com tipo, toggle ativo/inativo
+### Step 1 — Dados Gerais (expandido)
+- Seleção de obra (mantém)
+- Data + dia da semana (calculado automaticamente)
+- Horário de trabalho: entrada, saída, intervalo (campos de hora)
+- Clima manhã e tarde: botões de ícone separados por período
+- Condição manhã e tarde: Praticável / Impraticável por período
+- Observações
 
-### Relatórios Diários (`/rdo/relatorios`) — **foco UX mobile**
-- **Lista**: cards empilhados (não tabela) com obra, data, clima (ícone), status
-- **Criação/Edição**: formulário em etapas (stepper) para mobile:
-  1. **Dados Gerais** — obra (select), data, clima (botões com ícones ☀️🌥️🌧️⛈️), condição de trabalho
-  2. **Equipe** — checklist de funcionários com campo de horas (toggle presente/ausente)
-  3. **Equipamentos** — checklist com horas de uso e status operacional
-  4. **Atividades** — lista dinâmica de atividades executadas (adicionar/remover)
-  5. **Resumo** — preview do RDO completo + botão "Finalizar"
+### Step 2 — Equipe (expandido)
+- Cada funcionário com: checkbox presença, entrada/saída individual, intervalo, horas (calculado), local de trabalho
+- Campos touch-friendly mantidos
 
-### Dashboard RDO (`/rdo`)
-- Cards: total de obras ativas, RDOs do mês, funcionários mobilizados
-- Lista dos últimos RDOs
+### Step 3 — Equipamentos (expandido)
+- Campo de quantidade (inteiro) por equipamento selecionado
 
----
+### Step 4 — Atividades (expandido)
+- Adicionar campo de status por atividade (Em Andamento / Concluído / Não Iniciado)
 
-## 3. Foco em Usabilidade
+### Step 5 — Fotos (NOVO step)
+- Upload de múltiplas fotos com legenda
+- Preview em grid
+- Exclusão individual
 
-- **Cards ao invés de tabelas** em telas mobile (390px viewport)
-- **Stepper visual** no formulário de RDO com indicação de progresso
-- **Ícones de clima** clicáveis ao invés de select dropdown
-- **Checkboxes grandes** para marcar presença de funcionários em campo (touch-friendly)
-- **Botões de ação proeminentes** (FAB para novo RDO)
-- **Feedback visual** com toast em todas as ações
-- **Scroll suave** entre etapas do stepper
+### Step 6 — Resumo + Aprovação
+- Preview completo do RDO no formato do PDF
+- Informações de aprovação (contratada + contratante)
+- Botões: Salvar Rascunho / Finalizar
 
 ---
 
-## 4. Rotas
-Registrar em `App.tsx`:
-- `/rdo` — Dashboard
-- `/rdo/relatorios` — Lista e CRUD de RDOs
-- `/rdo/obras` — CRUD Obras
-- `/rdo/funcionarios` — CRUD Funcionários
-- `/rdo/equipamentos` — CRUD Equipamentos
+## 3. Geração de PDF
+
+- Botão "Gerar PDF" no card do RDO (lista) e no resumo
+- Layout seguindo o padrão do PDF enviado (cabeçalho com logo, tabela de dados gerais, mão de obra, equipamentos, atividades, fotos, assinaturas)
+- Usar edge function com geração server-side ou biblioteca client-side
 
 ---
 
-## 5. Seeds
-- 2-3 obras por empresa
-- 5-8 funcionários por empresa
-- 3-5 equipamentos por empresa
-- 3-4 RDOs de exemplo com presença, equipamentos e atividades
+## 4. Tela de Obras — campos extras
+- Adicionar campos: contrato, contratante, local, prazo contratual (dias)
+- Exibir prazo decorrido e prazo a vencer (calculados a partir de data_inicio)
 
 ---
 
-## Arquivos criados/editados
-- `src/pages/rdo/Dashboard.tsx` — reescrito
-- `src/pages/rdo/Obras.tsx` — novo
-- `src/pages/rdo/Funcionarios.tsx` — novo
-- `src/pages/rdo/Equipamentos.tsx` — novo
-- `src/pages/rdo/Relatorios.tsx` — novo
-- `src/pages/rdo/RDOForm.tsx` — novo (stepper mobile-first)
-- `src/App.tsx` — novas rotas
-- 1 migração SQL com todas as tabelas + RLS + seeds
+## 5. Arquivos criados/editados
+- 1 migração SQL (alter tables + novas tabelas + bucket + trigger número)
+- `src/pages/rdo/RDOForm.tsx` — reescrita com 6 steps
+- `src/pages/rdo/Relatorios.tsx` — botão PDF, número do relatório nos cards
+- `src/pages/rdo/Obras.tsx` — campos contrato/contratante/local/prazo
+- `src/pages/rdo/Dashboard.tsx` — ajustes para novos campos
+
+---
+
+## Detalhes técnicos
+- Os campos `clima` e `condicao_trabalho` existentes serão migrados para `clima_manha`/`condicao_manha` via SQL de migração
+- Storage bucket com RLS baseada em `user_belongs_to_empresa` (via join com rdos)
+- Número sequencial implementado via trigger `BEFORE INSERT` que faz `MAX(numero) + 1` filtrado por empresa_id
+- Fotos salvas no bucket `rdo-fotos` com path `{empresa_id}/{rdo_id}/{filename}`
 
