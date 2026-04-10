@@ -635,13 +635,15 @@ export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
     };
   };
 
+  const approvalLeft = buildApprovalBlock('CONTRATADA', contratada) as any;
+  const approvalRight = buildApprovalBlock('CONTRATANTE', contratante) as any;
   content.push({
     columns: [
-      { width: '50%', ...buildApprovalBlock('CONTRATADA', contratada) } as any,
-      { width: '50%', ...buildApprovalBlock('CONTRATANTE', contratante) } as any,
+      { width: '50%', table: approvalLeft.table, layout: approvalLeft.layout },
+      { width: '50%', table: approvalRight.table, layout: approvalRight.layout },
     ],
     columnGap: 6,
-  });
+  } as any);
 
   // ── Styles ──
   const styles: StyleDictionary = {
