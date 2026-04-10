@@ -1,7 +1,11 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import pdfMake from 'pdfmake/build/pdfmake';
+import pdfFonts from 'pdfmake/build/vfs_fonts';
 import { format, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import type { TDocumentDefinitions, Content, TableCell, StyleDictionary } from 'pdfmake/interfaces';
+
+// Register fonts
+(pdfMake as any).vfs = (pdfFonts as any).pdfMake?.vfs ?? pdfFonts;
 
 export interface RDOPdfData {
   rdo: {
@@ -72,22 +76,17 @@ export interface RDOPdfData {
   }[];
 }
 
-const COLORS = {
-  headerBg: [26, 115, 232] as [number, number, number],
-  headerText: [255, 255, 255] as [number, number, number],
-  sectionBg: [55, 65, 81] as [number, number, number],
-  sectionText: [255, 255, 255] as [number, number, number],
-  lightBg: [243, 244, 246] as [number, number, number],
-  border: [209, 213, 219] as [number, number, number],
-  text: [31, 41, 55] as [number, number, number],
-  mutedText: [107, 114, 128] as [number, number, number],
-  greenBg: [220, 252, 231] as [number, number, number],
-  greenText: [22, 101, 52] as [number, number, number],
-  yellowBg: [254, 249, 195] as [number, number, number],
-  yellowText: [133, 77, 14] as [number, number, number],
-};
+// ── Helpers ──
 
-// No emojis — jsPDF/helvetica doesn't support them
+const BORDER_COLOR = '#9ca3af';
+const SECTION_BG = '#f3f4f6';
+const COL_HEADER_BG = '#f9fafb';
+const ZEBRA_ODD = '#fafafa';
+const GREEN = '#16a34a';
+const BLUE = '#3b82f6';
+const RED = '#dc2626';
+const MUTED = '#6b7280';
+
 const climaLabels: Record<string, string> = {
   ensolarado: 'Claro',
   nublado: 'Nublado',
@@ -96,40 +95,40 @@ const climaLabels: Record<string, string> = {
 };
 
 const condicaoLabels: Record<string, string> = {
-  praticavel: 'Praticavel',
-  impraticavel: 'Impraticavel',
+  praticavel: 'Praticável',
+  impraticavel: 'Impraticável',
 };
 
 const statusLabels: Record<string, string> = {
   em_andamento: 'Em Andamento',
-  concluido: 'Concluido',
-  nao_iniciado: 'Nao Iniciado',
+  concluido: 'Concluída',
+  concluida: 'Concluída',
+  nao_iniciado: 'Não Iniciado',
+  paralisada: 'Paralisada',
+  paralisado: 'Paralisada',
 };
 
-/** Strip seconds: "07:00:00" → "07:00" */
-function formatTime(t: string | null): string {
-  if (!t) return '--';
+const statusColors: Record<string, string> = {
+  em_andamento: BLUE,
+  concluido: GREEN,
+  concluida: GREEN,
+  nao_iniciado: MUTED,
+  paralisada: RED,
+  paralisado: RED,
+};
+
+function fmt(t: string | null): string {
+  if (!t) return '—';
   const parts = t.split(':');
   return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : t;
 }
 
-/** Calculate worked hours from entry/exit/interval */
-function calcWorkedHours(
-  entrada: string | null,
-  saida: string | null,
-  intInicio: string | null,
-  intFim: string | null
-): string {
-  if (!entrada || !saida) return '--';
-  const toMin = (t: string) => {
-    const p = t.split(':').map(Number);
-    return p[0] * 60 + p[1];
-  };
+function calcHours(entrada: string | null, saida: string | null, intInicio: string | null, intFim: string | null): string {
+  if (!entrada || !saida) return '—';
+  const toMin = (t: string) => { const p = t.split(':').map(Number); return p[0] * 60 + p[1]; };
   let total = toMin(saida) - toMin(entrada);
-  if (intInicio && intFim) {
-    total -= toMin(intFim) - toMin(intInicio);
-  }
-  if (total <= 0) return '--';
+  if (intInicio && intFim) total -= toMin(intFim) - toMin(intInicio);
+  if (total <= 0) return '—';
   const h = Math.floor(total / 60);
   const m = total % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -150,476 +149,540 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-function drawSectionHeader(doc: jsPDF, title: string, x: number, y: number, width: number): number {
-  doc.setFillColor(...COLORS.sectionBg);
-  doc.rect(x, y, width, 7, 'F');
-  doc.setTextColor(...COLORS.sectionText);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title, x + 3, y + 5);
-  return y + 9;
+function sectionTitle(text: string): Content {
+  return {
+    text,
+    style: 'sectionHeader',
+    margin: [0, 8, 0, 2],
+  };
 }
 
-function checkPageBreak(doc: jsPDF, y: number, needed: number, margin: number): number {
-  if (y + needed > 285) {
-    doc.addPage();
-    return margin;
-  }
-  return y;
+function defaultBorders(): [boolean, boolean, boolean, boolean] {
+  return [true, true, true, true];
 }
+
+// ── Build PDF ──
 
 export async function generateRDOPdf(data: RDOPdfData): Promise<void> {
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = 210;
-  const margin = 12;
-  const contentWidth = pageWidth - margin * 2;
-  let y = margin;
-
   const rdoDate = new Date(data.rdo.data + 'T00:00:00');
   const formattedDate = format(rdoDate, 'dd/MM/yyyy');
   const diaSemana = format(rdoDate, 'EEEE', { locale: ptBR });
-  const rdoNumero = data.rdo.numero ? String(data.rdo.numero) : '--';
-  const statusLabel = data.rdo.status === 'finalizado' ? 'Aprovado' : 'Rascunho';
+  const diaSemanaCapitalized = diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1);
+  const rdoNumero = data.rdo.numero ? String(data.rdo.numero) : '—';
+  const isAprovado = data.rdo.status === 'finalizado';
 
-  // =========== TOP BAR ===========
-  doc.setFillColor(...COLORS.headerBg);
-  doc.rect(0, 0, pageWidth, 12, 'F');
-  doc.setTextColor(...COLORS.headerText);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Relatorio ${formattedDate}  n. ${rdoNumero}`, margin, 8);
-
-  // Status badge
-  const badgeBg = data.rdo.status === 'finalizado' ? COLORS.greenBg : COLORS.yellowBg;
-  const badgeText = data.rdo.status === 'finalizado' ? COLORS.greenText : COLORS.yellowText;
-  doc.setFillColor(...badgeBg);
-  doc.roundedRect(pageWidth - margin - 28, 3, 26, 6, 1, 1, 'F');
-  doc.setTextColor(...badgeText);
-  doc.setFontSize(7);
-  doc.text(statusLabel, pageWidth - margin - 15, 7.5, { align: 'center' });
-
-  y = 16;
-
-  // =========== HEADER INFO BOX ===========
-  // Now includes Contrato in right panel
-  const headerH = 24;
-  doc.setDrawColor(...COLORS.border);
-  doc.setLineWidth(0.3);
-  doc.rect(margin, y, contentWidth, headerH);
-
-  // Left: Company name + CNPJ
-  doc.setTextColor(...COLORS.text);
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.text(data.empresa.nome, margin + 4, y + 8);
-  if (data.empresa.cnpj) {
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text(`CNPJ: ${data.empresa.cnpj}`, margin + 4, y + 13);
-  }
-
-  // Right panel: Relatório n°, Data, Dia, Contrato
-  const rightCol = margin + contentWidth * 0.52;
-  doc.setLineWidth(0.3);
-  doc.line(rightCol - 4, y, rightCol - 4, y + headerH);
-
-  const infoLabels = ['Relatorio n.', 'Data relatorio', 'Dia da semana', 'Contrato'];
-  const infoValues = [
-    rdoNumero,
-    formattedDate,
-    diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1),
-    data.obra.contrato || '--',
-  ];
-
-  infoLabels.forEach((label, i) => {
-    const rowY = y + 5.5 + i * 4.8;
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text(label, rightCol, rowY);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...COLORS.text);
-    doc.text(infoValues[i], rightCol + 32, rowY);
-  });
-
-  y += headerH + 4;
-
-  // =========== SECTION: Dados da Obra ===========
-  y = drawSectionHeader(doc, 'Relatorio Diario de Obra (RDO)', margin, y, contentWidth);
-
+  // Prazo calculations
   const prazoContratual = data.obra.prazo_contratual_dias;
   let prazoDecorrido: number | null = null;
   let prazoVencer: number | null = null;
   if (prazoContratual && data.obra.data_inicio) {
     const inicio = new Date(data.obra.data_inicio + 'T00:00:00');
-    prazoDecorrido = Math.max(0, differenceInCalendarDays(rdoDate, inicio));
-    prazoVencer = Math.max(0, prazoContratual - prazoDecorrido);
+    prazoDecorrido = differenceInCalendarDays(rdoDate, inicio);
+    prazoVencer = prazoContratual - prazoDecorrido;
+  }
+  const fmtPrazo = (v: number | null) => (v != null ? `${v} dias` : '—');
+
+  // Hours
+  const horaEntrada = fmt(data.rdo.horario_entrada);
+  const horaSaida = fmt(data.rdo.horario_saida);
+  const intInicio = fmt(data.rdo.horario_intervalo_inicio);
+  const intFim = fmt(data.rdo.horario_intervalo_fim);
+  const horasTrabalhadas = calcHours(data.rdo.horario_entrada, data.rdo.horario_saida, data.rdo.horario_intervalo_inicio, data.rdo.horario_intervalo_fim);
+
+  // Load logo
+  let logoContent: Content;
+  if (data.empresa.logo_url) {
+    const logoBase64 = await loadImageAsBase64(data.empresa.logo_url);
+    if (logoBase64) {
+      logoContent = { image: logoBase64, width: 120, height: 40, margin: [0, 0, 0, 4] };
+    } else {
+      logoContent = { text: data.empresa.nome, style: 'companyName', margin: [0, 0, 0, 4] };
+    }
+  } else {
+    logoContent = { text: data.empresa.nome, style: 'companyName', margin: [0, 0, 0, 4] };
   }
 
-  const fmtPrazo = (v: number | null) => (v != null ? `${v} dias` : '--');
+  // Load photos
+  const photoImages: (string | null)[] = [];
+  for (const foto of data.fotos) {
+    photoImages.push(await loadImageAsBase64(foto.url));
+  }
 
-  const obraRows = [
-    ['Obra:', data.obra.nome, 'Prazo contratual:', fmtPrazo(prazoContratual)],
-    ['Local:', data.obra.local || data.obra.endereco || '--', 'Prazo decorrido:', fmtPrazo(prazoDecorrido)],
-    ['Contratante:', data.obra.contratante || '--', 'Prazo a vencer:', fmtPrazo(prazoVencer)],
-    ['Responsavel:', data.obra.responsavel || '--', '', ''],
+  // ── Content sections ──
+  const content: Content[] = [];
+
+  // ====== 1. HEADER: 2-column table (70/30) ======
+  const headerLeftTable: Content = {
+    table: {
+      widths: ['auto', '*'],
+      body: [
+        [{ text: 'Obra', style: 'labelCell' }, { text: data.obra.nome, style: 'valueCell', bold: true }],
+        [{ text: 'Local', style: 'labelCell' }, { text: data.obra.local || data.obra.endereco || '—', style: 'valueCell' }],
+        [{ text: 'Contratante', style: 'labelCell' }, { text: data.obra.contratante || '—', style: 'valueCell' }],
+        [{ text: 'Responsável', style: 'labelCell' }, { text: data.obra.responsavel || '—', style: 'valueCell' }],
+      ],
+    },
+    layout: {
+      hLineWidth: () => 0.5,
+      vLineWidth: () => 0.5,
+      hLineColor: () => BORDER_COLOR,
+      vLineColor: () => BORDER_COLOR,
+    },
+  };
+
+  const rightInfoRows: TableCell[][] = [
+    [{ text: 'Relatório n°', style: 'labelCell' }, { text: rdoNumero, style: 'valueCell', bold: true }],
+    [{ text: 'Data do relatório', style: 'labelCell' }, { text: formattedDate, style: 'valueCell', bold: true }],
+    [{ text: 'Dia da semana', style: 'labelCell' }, { text: diaSemanaCapitalized, style: 'valueCell' }],
+    [{ text: 'Contrato', style: 'labelCell' }, { text: data.obra.contrato || '—', style: 'valueCell' }],
+    [{ text: 'Prazo contratual', style: 'labelCell' }, { text: fmtPrazo(prazoContratual), style: 'valueCell' }],
+    [{ text: 'Prazo decorrido', style: 'labelCell' }, { text: fmtPrazo(prazoDecorrido), style: 'valueCell' }],
+    [{ text: 'Prazo a vencer', style: 'labelCell' }, { text: fmtPrazo(prazoVencer), style: 'valueCell' }],
   ];
 
-  autoTable(doc, {
-    startY: y,
-    margin: { left: margin, right: margin },
-    theme: 'plain',
-    styles: { fontSize: 8, cellPadding: 1.5, textColor: COLORS.text },
-    columnStyles: {
-      0: { fontStyle: 'normal', textColor: COLORS.mutedText, cellWidth: 28 },
-      1: { fontStyle: 'bold', cellWidth: contentWidth * 0.38 - 28 },
-      2: { fontStyle: 'normal', textColor: COLORS.mutedText, cellWidth: 32 },
-      3: { fontStyle: 'bold' },
+  const headerRightTable: Content = {
+    table: {
+      widths: ['auto', '*'],
+      body: rightInfoRows,
     },
-    body: obraRows,
+    layout: {
+      hLineWidth: () => 0.5,
+      vLineWidth: () => 0.5,
+      hLineColor: () => BORDER_COLOR,
+      vLineColor: () => BORDER_COLOR,
+    },
+  };
+
+  // Badge "Aprovado"
+  const badgeContent: Content = isAprovado
+    ? {
+        table: {
+          widths: ['*'],
+          body: [[{
+            text: 'APROVADO',
+            alignment: 'center' as const,
+            color: '#ffffff',
+            bold: true,
+            fontSize: 9,
+            margin: [8, 3, 8, 3] as [number, number, number, number],
+          }]],
+        },
+        layout: {
+          hLineWidth: () => 0,
+          vLineWidth: () => 0,
+          fillColor: () => GREEN,
+        },
+        margin: [0, 0, 0, 4] as [number, number, number, number],
+      }
+    : { text: '' };
+
+  content.push({
+    columns: [
+      {
+        width: '65%',
+        stack: [logoContent, headerLeftTable],
+      },
+      {
+        width: '35%',
+        stack: [badgeContent, headerRightTable],
+      },
+    ],
+    columnGap: 10,
   });
 
-  y = (doc as any).lastAutoTable.finalY + 2;
+  // ====== 2. HORÁRIO + CLIMA (side by side) ======
+  content.push(sectionTitle('Horário de Trabalho / Condição Climática'));
 
-  // =========== SECTION: Horário e Clima (redesigned) ===========
-  y = drawSectionHeader(doc, 'Horario de Trabalho / Condicao Climatica', margin, y, contentWidth);
+  const horarioTable: Content = {
+    table: {
+      widths: ['auto', '*', 'auto'],
+      body: [
+        [
+          { text: 'Horário de trabalho', style: 'colHeader', colSpan: 2, border: defaultBorders() }, {},
+          { text: 'Horas trabalhadas', style: 'colHeader', alignment: 'center' as const, border: defaultBorders() },
+        ],
+        [
+          { text: 'Entrada / Saída', style: 'labelCell', border: defaultBorders() },
+          { text: `${horaEntrada} - ${horaSaida}`, style: 'valueCell', bold: true, border: defaultBorders() },
+          { text: horasTrabalhadas, fontSize: 14, bold: true, alignment: 'center' as const, rowSpan: 2, margin: [0, 4, 0, 0] as [number, number, number, number], border: defaultBorders() },
+        ],
+        [
+          { text: 'Intervalo', style: 'labelCell', border: defaultBorders() },
+          { text: `${intInicio} - ${intFim}`, style: 'valueCell', bold: true, border: defaultBorders() },
+          {},
+        ],
+      ],
+    },
+    layout: {
+      hLineWidth: () => 0.5,
+      vLineWidth: () => 0.5,
+      hLineColor: () => BORDER_COLOR,
+      vLineColor: () => BORDER_COLOR,
+      fillColor: (row: number) => row === 0 ? COL_HEADER_BG : null,
+    },
+  };
 
-  const horaEntrada = formatTime(data.rdo.horario_entrada);
-  const horaSaida = formatTime(data.rdo.horario_saida);
-  const intInicio = formatTime(data.rdo.horario_intervalo_inicio);
-  const intFim = formatTime(data.rdo.horario_intervalo_fim);
-  const horasTrabalhadas = calcWorkedHours(
-    data.rdo.horario_entrada,
-    data.rdo.horario_saida,
-    data.rdo.horario_intervalo_inicio,
-    data.rdo.horario_intervalo_fim
-  );
+  const climaTable: Content = {
+    table: {
+      widths: ['auto', '*', '*'],
+      body: [
+        [
+          { text: 'Condição climática', style: 'colHeader', border: defaultBorders() },
+          { text: 'Tempo', style: 'colHeader', alignment: 'center' as const, border: defaultBorders() },
+          { text: 'Condição', style: 'colHeader', alignment: 'center' as const, border: defaultBorders() },
+        ],
+        [
+          { text: 'Manhã', style: 'labelCell', border: defaultBorders() },
+          { text: climaLabels[data.rdo.clima_manha] || data.rdo.clima_manha, alignment: 'center' as const, border: defaultBorders() },
+          { text: condicaoLabels[data.rdo.condicao_manha] || data.rdo.condicao_manha, alignment: 'center' as const, border: defaultBorders() },
+        ],
+        [
+          { text: 'Tarde', style: 'labelCell', border: defaultBorders() },
+          { text: climaLabels[data.rdo.clima_tarde] || data.rdo.clima_tarde, alignment: 'center' as const, border: defaultBorders() },
+          { text: condicaoLabels[data.rdo.condicao_tarde] || data.rdo.condicao_tarde, alignment: 'center' as const, border: defaultBorders() },
+        ],
+      ],
+    },
+    layout: {
+      hLineWidth: () => 0.5,
+      vLineWidth: () => 0.5,
+      hLineColor: () => BORDER_COLOR,
+      vLineColor: () => BORDER_COLOR,
+      fillColor: (row: number) => row === 0 ? COL_HEADER_BG : null,
+    },
+  };
 
-  // 3-block layout: Left (horários) | Center (horas) | Right (clima)
-  const blockH = 22;
-  const leftW = contentWidth * 0.32;
-  const centerW = contentWidth * 0.2;
-  const rightW = contentWidth - leftW - centerW;
+  content.push({
+    columns: [
+      { width: '50%', ...horarioTable } as any,
+      { width: '50%', ...climaTable } as any,
+    ],
+    columnGap: 6,
+  });
 
-  doc.setDrawColor(...COLORS.border);
-  doc.setLineWidth(0.2);
-  doc.rect(margin, y, leftW, blockH);
-  doc.rect(margin + leftW, y, centerW, blockH);
-  doc.rect(margin + leftW + centerW, y, rightW, blockH);
-
-  // Left block: Entrada/Saída/Intervalo
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...COLORS.mutedText);
-  doc.text('Entrada:', margin + 2, y + 6);
-  doc.text('Saida:', margin + 2, y + 11);
-  doc.text('Intervalo:', margin + 2, y + 16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.text);
-  doc.text(horaEntrada, margin + 22, y + 6);
-  doc.text(horaSaida, margin + 22, y + 11);
-  doc.text(`${intInicio} - ${intFim}`, margin + 22, y + 16);
-
-  // Center block: Horas trabalhadas
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...COLORS.mutedText);
-  doc.text('Horas Trab.', margin + leftW + centerW / 2, y + 5, { align: 'center' });
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.text);
-  doc.text(horasTrabalhadas, margin + leftW + centerW / 2, y + 15, { align: 'center' });
-
-  // Right block: Clima table
-  const climaX = margin + leftW + centerW;
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.mutedText);
-  doc.text('Periodo', climaX + 2, y + 5);
-  doc.text('Clima', climaX + 18, y + 5);
-  doc.text('Condicao', climaX + rightW - 18, y + 5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...COLORS.text);
-  doc.setFontSize(7);
-  // Manhã
-  doc.text('Manha', climaX + 2, y + 11);
-  doc.text(climaLabels[data.rdo.clima_manha] || data.rdo.clima_manha, climaX + 18, y + 11);
-  doc.text(condicaoLabels[data.rdo.condicao_manha] || data.rdo.condicao_manha, climaX + rightW - 18, y + 11);
-  // Tarde
-  doc.text('Tarde', climaX + 2, y + 17);
-  doc.text(climaLabels[data.rdo.clima_tarde] || data.rdo.clima_tarde, climaX + 18, y + 17);
-  doc.text(condicaoLabels[data.rdo.condicao_tarde] || data.rdo.condicao_tarde, climaX + rightW - 18, y + 17);
-
-  y += blockH + 4;
-
-  // =========== SECTION: Mão de Obra ===========
+  // ====== 3. MÃO DE OBRA ======
   const presenteFuncs = data.funcionarios.filter((f) => f.presente);
-  y = checkPageBreak(doc, y, 20, margin);
-  y = drawSectionHeader(doc, `Mao de Obra (${presenteFuncs.length})`, margin, y, contentWidth);
+  content.push(sectionTitle(`Mão de Obra (${presenteFuncs.length})`));
 
   if (presenteFuncs.length > 0) {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['N.', 'Nome', 'Funcao', 'Entrada / Saida', 'Intervalo', 'Horas', 'Local']],
-      body: presenteFuncs.map((f, i) => [
-        String(i + 1),
-        f.nome,
-        f.cargo || '--',
-        `${formatTime(f.horario_entrada)} - ${formatTime(f.horario_saida)}`,
-        formatTime(f.horario_intervalo),
-        f.horas != null ? String(f.horas) + 'h' : '--',
-        f.local_trabalho || '',
-      ]),
-      theme: 'grid',
-      styles: { fontSize: 7, cellPadding: 1.5, textColor: COLORS.text },
-      headStyles: { fillColor: COLORS.sectionBg, textColor: COLORS.sectionText, fontSize: 7, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: COLORS.lightBg },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 25 },
-        3: { cellWidth: 28 },
-        6: { fontStyle: 'italic', textColor: COLORS.mutedText },
+    const maoDeObraBody: TableCell[][] = [
+      [
+        { text: 'N°', style: 'colHeader', alignment: 'center' as const },
+        { text: 'Nome', style: 'colHeader' },
+        { text: 'Função', style: 'colHeader' },
+        { text: 'Entrada / Saída', style: 'colHeader', alignment: 'center' as const },
+        { text: 'Intervalo', style: 'colHeader', alignment: 'center' as const },
+        { text: 'Horas', style: 'colHeader', alignment: 'center' as const },
+        { text: 'Local', style: 'colHeader' },
+      ],
+      ...presenteFuncs.map((f, i) => [
+        { text: String(i + 1), alignment: 'center' as const },
+        { text: f.nome },
+        { text: f.cargo || '—' },
+        { text: `${fmt(f.horario_entrada)} - ${fmt(f.horario_saida)}`, alignment: 'center' as const },
+        { text: fmt(f.horario_intervalo), alignment: 'center' as const },
+        { text: f.horas != null ? `${String(f.horas).padStart(2, '0')}:00` : '—', alignment: 'center' as const },
+        { text: f.local_trabalho || '—', color: MUTED },
+      ] as TableCell[]),
+    ];
+
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: [20, '*', 60, 70, 55, 35, 60],
+        body: maoDeObraBody,
+      },
+      layout: {
+        hLineWidth: () => 0.5,
+        vLineWidth: () => 0.5,
+        hLineColor: () => BORDER_COLOR,
+        vLineColor: () => BORDER_COLOR,
+        fillColor: (row: number) => {
+          if (row === 0) return COL_HEADER_BG;
+          return row % 2 === 0 ? ZEBRA_ODD : null;
+        },
       },
     });
-    y = (doc as any).lastAutoTable.finalY + 2;
   } else {
-    doc.setFontSize(8);
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text('Nenhum funcionario registrado.', margin + 4, y + 5);
-    y += 10;
+    content.push({ text: 'Nenhum funcionário registrado.', color: MUTED, italics: true, margin: [0, 2, 0, 4] });
   }
 
-  // =========== SECTION: Equipamentos (grid layout) ===========
-  y = checkPageBreak(doc, y, 20, margin);
-  const selEquips = data.equipamentos;
-  y = drawSectionHeader(doc, `Equipamentos (${selEquips.length})`, margin, y, contentWidth);
+  // ====== 4. EQUIPAMENTOS (grid 6 columns) ======
+  content.push(sectionTitle(`Equipamentos (${data.equipamentos.length})`));
 
-  if (selEquips.length > 0) {
+  if (data.equipamentos.length > 0) {
     const gridCols = 6;
-    const cellW = contentWidth / gridCols;
-    const cellH = 12;
+    const equipRows: TableCell[][] = [];
 
-    for (let i = 0; i < selEquips.length; i += gridCols) {
-      y = checkPageBreak(doc, y, cellH + 2, margin);
-      const rowEquips = selEquips.slice(i, i + gridCols);
-
-      for (let j = 0; j < rowEquips.length; j++) {
-        const e = rowEquips[j];
-        const cx = margin + j * cellW;
-
-        // Cell border
-        doc.setDrawColor(...COLORS.border);
-        doc.setLineWidth(0.2);
-        doc.rect(cx, y, cellW, cellH);
-
-        // Name (top)
-        doc.setFontSize(6);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...COLORS.text);
-        const nameLines = doc.splitTextToSize(e.nome, cellW - 3);
-        doc.text(nameLines[0] || '', cx + 1.5, y + 4);
-
-        // Quantity (bottom)
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...COLORS.mutedText);
-        doc.text(String(e.quantidade), cx + cellW / 2, y + 10, { align: 'center' });
+    for (let i = 0; i < data.equipamentos.length; i += gridCols) {
+      const nameRow: TableCell[] = [];
+      const qtyRow: TableCell[] = [];
+      for (let j = 0; j < gridCols; j++) {
+        const e = data.equipamentos[i + j];
+        if (e) {
+          nameRow.push({ text: e.nome, alignment: 'center' as const, fontSize: 7 });
+          qtyRow.push({ text: String(e.quantidade), alignment: 'center' as const, bold: true, fontSize: 9 });
+        } else {
+          nameRow.push({ text: '' });
+          qtyRow.push({ text: '' });
+        }
       }
-
-      // Fill empty cells in last row
-      for (let j = rowEquips.length; j < gridCols; j++) {
-        const cx = margin + j * cellW;
-        doc.setDrawColor(...COLORS.border);
-        doc.setLineWidth(0.2);
-        doc.rect(cx, y, cellW, cellH);
-      }
-
-      y += cellH;
+      equipRows.push(nameRow, qtyRow);
     }
-    y += 2;
+
+    content.push({
+      table: {
+        widths: Array(gridCols).fill('*'),
+        body: equipRows,
+      },
+      layout: {
+        hLineWidth: () => 0.5,
+        vLineWidth: () => 0.5,
+        hLineColor: () => BORDER_COLOR,
+        vLineColor: () => BORDER_COLOR,
+      },
+    });
   } else {
-    doc.setFontSize(8);
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text('Nenhum equipamento registrado.', margin + 4, y + 5);
-    y += 10;
+    content.push({ text: 'Nenhum equipamento registrado.', color: MUTED, italics: true, margin: [0, 2, 0, 4] });
   }
 
-  // =========== SECTION: Atividades (simplified: Descrição + Status) ===========
-  y = checkPageBreak(doc, y, 20, margin);
-  y = drawSectionHeader(doc, `Atividades (${data.atividades.length})`, margin, y, contentWidth);
+  // ====== 5. ATIVIDADES ======
+  content.push(sectionTitle(`Atividades (${data.atividades.length})`));
 
   if (data.atividades.length > 0) {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['Descricao', 'Status']],
-      body: data.atividades.map((a) => [
-        a.descricao,
-        statusLabels[a.status] || a.status,
-      ]),
-      theme: 'grid',
-      styles: { fontSize: 7, cellPadding: 1.5, textColor: COLORS.text },
-      headStyles: { fillColor: COLORS.sectionBg, textColor: COLORS.sectionText, fontSize: 7, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: COLORS.lightBg },
-      columnStyles: {
-        0: { cellWidth: contentWidth - 30 },
-        1: { cellWidth: 30, halign: 'center' },
+    const atividadesBody: TableCell[][] = [
+      [
+        { text: 'Descrição', style: 'colHeader' },
+        { text: 'Status', style: 'colHeader', alignment: 'center' as const },
+      ],
+      ...data.atividades.map((a) => {
+        const statusKey = a.status;
+        const statusLabel = statusLabels[statusKey] || statusKey;
+        const statusColor = statusColors[statusKey] || '#000000';
+        return [
+          { text: a.descricao },
+          { text: statusLabel, alignment: 'center' as const, color: statusColor, bold: true },
+        ] as TableCell[];
+      }),
+    ];
+
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: ['*', 80],
+        body: atividadesBody,
+      },
+      layout: {
+        hLineWidth: () => 0.5,
+        vLineWidth: () => 0.5,
+        hLineColor: () => BORDER_COLOR,
+        vLineColor: () => BORDER_COLOR,
+        fillColor: (row: number) => {
+          if (row === 0) return COL_HEADER_BG;
+          return row % 2 === 0 ? ZEBRA_ODD : null;
+        },
       },
     });
-    y = (doc as any).lastAutoTable.finalY + 2;
   } else {
-    doc.setFontSize(8);
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text('Nenhuma atividade registrada.', margin + 4, y + 5);
-    y += 10;
+    content.push({ text: 'Nenhuma atividade registrada.', color: MUTED, italics: true, margin: [0, 2, 0, 4] });
   }
 
-  // =========== SECTION: Observações ===========
+  // ====== 6. OBSERVAÇÕES ======
   if (data.rdo.observacoes) {
-    y = checkPageBreak(doc, y, 20, margin);
-    y = drawSectionHeader(doc, 'Observacoes', margin, y, contentWidth);
-    doc.setFontSize(8);
-    doc.setTextColor(...COLORS.text);
-    const lines = doc.splitTextToSize(data.rdo.observacoes, contentWidth - 8);
-    doc.text(lines, margin + 4, y + 4);
-    y += lines.length * 4 + 6;
+    content.push(sectionTitle('Observações'));
+    content.push({
+      table: {
+        widths: ['*'],
+        body: [[{ text: data.rdo.observacoes, margin: [4, 4, 4, 4] as [number, number, number, number] }]],
+      },
+      layout: {
+        hLineWidth: () => 0.5,
+        vLineWidth: () => 0.5,
+        hLineColor: () => BORDER_COLOR,
+        vLineColor: () => BORDER_COLOR,
+      },
+    });
   }
 
-  // =========== SECTION: Fotos ===========
+  // ====== 7. FOTOS (2-column grid) ======
   if (data.fotos.length > 0) {
-    y = checkPageBreak(doc, y, 60, margin);
-    y = drawSectionHeader(doc, `Registro Fotografico (${data.fotos.length})`, margin, y, contentWidth);
-
-    const colWidth = (contentWidth - 4) / 2;
-    const imgHeight = 50;
+    content.push(sectionTitle(`Registro Fotográfico (${data.fotos.length})`));
 
     for (let i = 0; i < data.fotos.length; i += 2) {
-      y = checkPageBreak(doc, y, imgHeight + 12, margin);
+      const cols: Content[] = [];
 
-      for (let j = 0; j < 2 && i + j < data.fotos.length; j++) {
-        const foto = data.fotos[i + j];
-        const x = margin + j * (colWidth + 4);
-        const imgData = await loadImageAsBase64(foto.url);
-        if (imgData) {
-          try {
-            doc.addImage(imgData, 'JPEG', x, y, colWidth, imgHeight);
-          } catch {
-            doc.setFillColor(...COLORS.lightBg);
-            doc.rect(x, y, colWidth, imgHeight, 'F');
-            doc.setFontSize(7);
-            doc.setTextColor(...COLORS.mutedText);
-            doc.text('Imagem indisponivel', x + colWidth / 2, y + imgHeight / 2, { align: 'center' });
+      for (let j = 0; j < 2; j++) {
+        const idx = i + j;
+        if (idx < data.fotos.length) {
+          const imgData = photoImages[idx];
+          const foto = data.fotos[idx];
+          const stackItems: Content[] = [];
+
+          if (imgData) {
+            stackItems.push({
+              image: imgData,
+              width: 230,
+              height: 170,
+              margin: [0, 0, 0, 2] as [number, number, number, number],
+            });
+          } else {
+            stackItems.push({
+              text: 'Imagem indisponível',
+              alignment: 'center',
+              color: MUTED,
+              italics: true,
+              margin: [0, 60, 0, 60] as [number, number, number, number],
+            });
           }
-        }
-        if (foto.legenda) {
-          doc.setFontSize(6);
-          doc.setTextColor(...COLORS.mutedText);
-          doc.text(foto.legenda, x + 1, y + imgHeight + 3);
+
+          if (foto.legenda) {
+            stackItems.push({
+              text: foto.legenda,
+              fontSize: 7,
+              color: MUTED,
+              italics: true,
+              margin: [0, 0, 0, 4] as [number, number, number, number],
+            });
+          }
+
+          cols.push({ stack: stackItems, width: '50%' } as any);
         }
       }
-      y += imgHeight + 8;
+
+      if (cols.length > 0) {
+        content.push({
+          columns: cols,
+          columnGap: 8,
+          margin: [0, 4, 0, 4] as [number, number, number, number],
+        });
+      }
     }
   }
 
-  // =========== SECTION: Assinaturas (redesigned) ===========
-  y = checkPageBreak(doc, y, 50, margin);
-  y = drawSectionHeader(doc, 'Aprovacoes / Assinaturas', margin, y, contentWidth);
+  // ====== 8. APROVAÇÕES (2-column: CONTRATADA / CONTRATANTE) ======
+  content.push(sectionTitle('Aprovações / Assinaturas'));
 
   const contratada = data.aprovacoes.find((a) => a.tipo === 'contratada');
   const contratante = data.aprovacoes.find((a) => a.tipo === 'contratante');
-  const halfW = (contentWidth - 4) / 2;
-  const sigBoxH = 42;
 
-  const drawSignatureBox = (
-    label: string,
-    person: typeof contratada | undefined,
-    x: number
-  ) => {
-    doc.setDrawColor(...COLORS.border);
-    doc.setLineWidth(0.3);
-    doc.rect(x, y, halfW, sigBoxH);
-
-    // Title
-    doc.setFillColor(...COLORS.lightBg);
-    doc.rect(x, y, halfW, 7, 'F');
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...COLORS.text);
-    doc.text(label, x + halfW / 2, y + 5, { align: 'center' });
+  const buildApprovalBlock = (label: string, person: typeof contratada): Content => {
+    const items: Content[] = [
+      { text: label, bold: true, fontSize: 9, alignment: 'center', margin: [0, 4, 0, 6] as [number, number, number, number], fillColor: SECTION_BG } as any,
+    ];
 
     if (person) {
-      // Name (large bold)
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...COLORS.text);
-      doc.text(person.nome, x + 4, y + 14);
+      items.push({ text: person.nome.toUpperCase(), bold: true, fontSize: 11, margin: [4, 4, 4, 2] as [number, number, number, number] });
+      if (person.cargo) items.push({ text: `Cargo: ${person.cargo}`, fontSize: 8, color: MUTED, margin: [4, 0, 4, 1] as [number, number, number, number] });
+      if (person.matricula) items.push({ text: `Matrícula: ${person.matricula}`, fontSize: 8, color: MUTED, margin: [4, 0, 4, 1] as [number, number, number, number] });
+      if (person.email) items.push({ text: `E-mail: ${person.email}`, fontSize: 8, color: MUTED, margin: [4, 0, 4, 4] as [number, number, number, number] });
 
-      // Cargo
-      if (person.cargo) {
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...COLORS.mutedText);
-        doc.text(`Cargo: ${person.cargo}`, x + 4, y + 19);
-      }
-
-      // Matrícula
-      if (person.matricula) {
-        doc.setFontSize(7);
-        doc.text(`Matricula: ${person.matricula}`, x + 4, y + 24);
-      }
-
-      // Email
-      if (person.email) {
-        doc.setFontSize(7);
-        doc.text(`Email: ${person.email}`, x + 4, y + 29);
-      }
-
-      // Approval badge
       if (person.aprovado_em) {
-        const badgeY = y + sigBoxH - 10;
-        doc.setFillColor(...COLORS.greenBg);
-        doc.roundedRect(x + 3, badgeY, halfW - 6, 8, 1, 1, 'F');
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...COLORS.greenText);
-        doc.text(
-          `Aprovado em ${format(new Date(person.aprovado_em), 'dd/MM/yyyy HH:mm')}`,
-          x + halfW / 2,
-          badgeY + 5.5,
-          { align: 'center' }
-        );
+        items.push({
+          table: {
+            widths: ['*'],
+            body: [[{
+              text: `Aprovado ${format(new Date(person.aprovado_em), 'dd/MM/yyyy HH:mm')}`,
+              alignment: 'center' as const,
+              color: '#ffffff',
+              bold: true,
+              fontSize: 8,
+              margin: [6, 3, 6, 3] as [number, number, number, number],
+            }]],
+          },
+          layout: {
+            hLineWidth: () => 0,
+            vLineWidth: () => 0,
+            fillColor: () => GREEN,
+          },
+          margin: [4, 2, 4, 4] as [number, number, number, number],
+        });
       } else {
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(...COLORS.yellowText);
-        doc.text('Pendente', x + halfW / 2, y + sigBoxH - 6, { align: 'center' });
+        items.push({
+          table: {
+            widths: ['*'],
+            body: [[{
+              text: 'Pendente',
+              alignment: 'center' as const,
+              color: '#ffffff',
+              bold: true,
+              fontSize: 8,
+              margin: [6, 3, 6, 3] as [number, number, number, number],
+            }]],
+          },
+          layout: {
+            hLineWidth: () => 0,
+            vLineWidth: () => 0,
+            fillColor: () => MUTED,
+          },
+          margin: [4, 2, 4, 4] as [number, number, number, number],
+        });
       }
     } else {
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(...COLORS.mutedText);
-      doc.text('Pendente', x + halfW / 2, y + sigBoxH / 2 + 4, { align: 'center' });
+      items.push({ text: 'Pendente', alignment: 'center', color: MUTED, italics: true, margin: [0, 20, 0, 20] as [number, number, number, number] });
     }
+
+    return {
+      table: {
+        widths: ['*'],
+        body: [[{ stack: items, border: defaultBorders() }]],
+      },
+      layout: {
+        hLineWidth: () => 0.5,
+        vLineWidth: () => 0.5,
+        hLineColor: () => BORDER_COLOR,
+        vLineColor: () => BORDER_COLOR,
+      },
+    };
   };
 
-  drawSignatureBox('CONTRATADA', contratada, margin);
-  drawSignatureBox('CONTRATANTE', contratante, margin + halfW + 4);
+  content.push({
+    columns: [
+      { width: '50%', ...buildApprovalBlock('CONTRATADA', contratada) } as any,
+      { width: '50%', ...buildApprovalBlock('CONTRATANTE', contratante) } as any,
+    ],
+    columnGap: 6,
+  });
 
-  // =========== FOOTER on each page ===========
-  const pageCount = doc.getNumberOfPages();
-  for (let p = 1; p <= pageCount; p++) {
-    doc.setPage(p);
-    doc.setFontSize(6);
-    doc.setTextColor(...COLORS.mutedText);
-    doc.text(`${data.empresa.nome} -- RDO n. ${rdoNumero} -- ${formattedDate}`, margin, 293);
-    doc.text(`Pagina ${p}/${pageCount}`, pageWidth - margin, 293, { align: 'right' });
-  }
+  // ── Styles ──
+  const styles: StyleDictionary = {
+    companyName: { fontSize: 14, bold: true },
+    sectionHeader: { fontSize: 10, bold: true, fillColor: SECTION_BG, margin: [4, 2, 4, 2] as any },
+    colHeader: { fontSize: 8, bold: true, fillColor: COL_HEADER_BG },
+    labelCell: { fontSize: 8, color: MUTED },
+    valueCell: { fontSize: 8 },
+  };
 
-  // Save
+  // ── Document definition ──
+  const docDefinition: TDocumentDefinitions = {
+    pageSize: 'A4',
+    pageMargins: [57, 43, 57, 43], // ~20mm sides, ~15mm top/bottom
+    defaultStyle: {
+      fontSize: 9,
+      font: 'Roboto',
+    },
+    styles,
+    content,
+    footer: (currentPage: number, pageCount: number) => ({
+      columns: [
+        {
+          text: `Relatório ${formattedDate}  n° ${rdoNumero}  •  ${isAprovado ? 'Aprovado' : 'Rascunho'}`,
+          fontSize: 7,
+          color: MUTED,
+          margin: [57, 0, 0, 0],
+        },
+        {
+          text: `Página ${currentPage} / ${pageCount}`,
+          fontSize: 7,
+          color: MUTED,
+          alignment: 'right' as const,
+          margin: [0, 0, 57, 0],
+        },
+      ],
+      margin: [0, 10, 0, 0] as [number, number, number, number],
+    }),
+  };
+
+  // Generate and download
   const filename = `RDO_${rdoNumero}_${data.rdo.data}.pdf`;
-  doc.save(filename);
+  pdfMake.createPdf(docDefinition).download(filename);
 }
