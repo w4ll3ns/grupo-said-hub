@@ -220,29 +220,53 @@ export type Database = {
       empresas: {
         Row: {
           ativa: boolean
+          cep: string | null
+          cidade: string | null
           cnpj: string | null
           created_at: string
+          email: string | null
+          endereco: string | null
+          estado: string | null
           id: string
+          inscricao_estadual: string | null
+          inscricao_municipal: string | null
           logo_url: string | null
           nome: string
+          telefone: string | null
           updated_at: string
         }
         Insert: {
           ativa?: boolean
+          cep?: string | null
+          cidade?: string | null
           cnpj?: string | null
           created_at?: string
+          email?: string | null
+          endereco?: string | null
+          estado?: string | null
           id?: string
+          inscricao_estadual?: string | null
+          inscricao_municipal?: string | null
           logo_url?: string | null
           nome: string
+          telefone?: string | null
           updated_at?: string
         }
         Update: {
           ativa?: boolean
+          cep?: string | null
+          cidade?: string | null
           cnpj?: string | null
           created_at?: string
+          email?: string | null
+          endereco?: string | null
+          estado?: string | null
           id?: string
+          inscricao_estadual?: string | null
+          inscricao_municipal?: string | null
           logo_url?: string | null
           nome?: string
+          telefone?: string | null
           updated_at?: string
         }
         Relationships: []
