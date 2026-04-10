@@ -145,7 +145,7 @@ export default function FinanceiroDashboard() {
       return <Badge variant="destructive">Vencido</Badge>;
     }
     const proximo = isBefore(new Date(l.data_vencimento), addDays(hoje, 7));
-    if (proximo) return <Badge className="bg-yellow-500 text-white border-0">Próximo</Badge>;
+    if (proximo) return <Badge variant="secondary" className="bg-accent text-accent-foreground border-0">Próximo</Badge>;
     return <Badge variant="secondary">Pendente</Badge>;
   };
 
