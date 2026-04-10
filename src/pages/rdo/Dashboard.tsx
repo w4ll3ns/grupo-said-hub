@@ -33,8 +33,7 @@ export default function RDODashboard() {
   const { data: rdosMes = 0 } = useQuery({
     queryKey: ['rdo-dash-mes', empresaAtiva?.id],
     queryFn: async () => {
-      const inicio = new Date();
-      inicio.setDate(1);
+      const inicio = new Date(); inicio.setDate(1);
       const { count, error } = await supabase.from('rdos').select('*', { count: 'exact', head: true })
         .eq('empresa_id', empresaAtiva!.id).gte('data', inicio.toISOString().split('T')[0]);
       if (error) throw error;
@@ -118,15 +117,18 @@ export default function RDODashboard() {
             <p className="text-center py-6 text-muted-foreground text-sm">Nenhum RDO registrado</p>
           ) : (
             ultimosRDOs.map((rdo) => (
-              <div
-                key={rdo.id}
+              <div key={rdo.id}
                 className="flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors"
-                onClick={() => navigate('/rdo/relatorios')}
-              >
+                onClick={() => navigate('/rdo/relatorios')}>
                 <div className="flex items-center gap-3 min-w-0">
-                  {climaIcons[rdo.clima]}
+                  <div className="flex flex-col items-center">
+                    {climaIcons[rdo.clima_manha]}
+                  </div>
                   <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{rdo.obras?.nome}</p>
+                    <div className="flex items-center gap-2">
+                      {rdo.numero && <span className="text-xs font-mono text-muted-foreground">#{rdo.numero}</span>}
+                      <p className="font-medium text-sm truncate">{rdo.obras?.nome}</p>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(rdo.data + 'T00:00:00'), "dd/MM/yyyy", { locale: ptBR })}
                     </p>

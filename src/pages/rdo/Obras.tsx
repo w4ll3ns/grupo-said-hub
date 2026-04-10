@@ -12,14 +12,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Pencil, Search, HardHat, MapPin, Calendar } from 'lucide-react';
+import { Plus, Search, HardHat, MapPin, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 
 const schema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
   endereco: z.string().optional().or(z.literal('')),
   responsavel: z.string().optional().or(z.literal('')),
+  contrato: z.string().optional().or(z.literal('')),
+  contratante: z.string().optional().or(z.literal('')),
+  local: z.string().optional().or(z.literal('')),
+  prazo_contratual_dias: z.string().optional().or(z.literal('')),
   status: z.string().default('em_andamento'),
   data_inicio: z.string().optional().or(z.literal('')),
   data_previsao: z.string().optional().or(z.literal('')),
@@ -29,7 +33,8 @@ type FormData = z.infer<typeof schema>;
 type Obra = {
   id: string; empresa_id: string; nome: string; endereco: string | null;
   responsavel: string | null; status: string; data_inicio: string | null;
-  data_previsao: string | null; created_at: string;
+  data_previsao: string | null; contrato: string | null; contratante: string | null;
+  local: string | null; prazo_contratual_dias: number | null; created_at: string;
 };
 
 const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
@@ -47,7 +52,7 @@ export default function Obras() {
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { nome: '', endereco: '', responsavel: '', status: 'em_andamento', data_inicio: '', data_previsao: '' },
+    defaultValues: { nome: '', endereco: '', responsavel: '', status: 'em_andamento', data_inicio: '', data_previsao: '', contrato: '', contratante: '', local: '', prazo_contratual_dias: '' },
   });
 
   const { data: items = [], isLoading } = useQuery({
@@ -66,6 +71,10 @@ export default function Obras() {
         nome: values.nome,
         endereco: values.endereco || null,
         responsavel: values.responsavel || null,
+        contrato: values.contrato || null,
+        contratante: values.contratante || null,
+        local: values.local || null,
+        prazo_contratual_dias: values.prazo_contratual_dias ? parseInt(values.prazo_contratual_dias) : null,
         status: values.status,
         data_inicio: values.data_inicio || null,
         data_previsao: values.data_previsao || null,
@@ -87,22 +96,27 @@ export default function Obras() {
   });
 
   const handleClose = () => {
-    setOpen(false);
-    setEditing(null);
-    form.reset({ nome: '', endereco: '', responsavel: '', status: 'em_andamento', data_inicio: '', data_previsao: '' });
+    setOpen(false); setEditing(null);
+    form.reset({ nome: '', endereco: '', responsavel: '', status: 'em_andamento', data_inicio: '', data_previsao: '', contrato: '', contratante: '', local: '', prazo_contratual_dias: '' });
   };
 
   const handleEdit = (item: Obra) => {
     setEditing(item);
     form.reset({
-      nome: item.nome,
-      endereco: item.endereco || '',
-      responsavel: item.responsavel || '',
-      status: item.status,
-      data_inicio: item.data_inicio || '',
-      data_previsao: item.data_previsao || '',
+      nome: item.nome, endereco: item.endereco || '', responsavel: item.responsavel || '',
+      status: item.status, data_inicio: item.data_inicio || '', data_previsao: item.data_previsao || '',
+      contrato: item.contrato || '', contratante: item.contratante || '', local: item.local || '',
+      prazo_contratual_dias: item.prazo_contratual_dias ? String(item.prazo_contratual_dias) : '',
     });
     setOpen(true);
+  };
+
+  const getPrazos = (item: Obra) => {
+    if (!item.data_inicio || !item.prazo_contratual_dias) return null;
+    const inicio = new Date(item.data_inicio + 'T00:00:00');
+    const decorrido = differenceInDays(new Date(), inicio);
+    const aVencer = item.prazo_contratual_dias - decorrido;
+    return { decorrido: Math.max(0, decorrido), aVencer: Math.max(0, aVencer) };
   };
 
   const filtered = items.filter((i) => i.nome.toLowerCase().includes(search.toLowerCase()));
@@ -119,9 +133,7 @@ export default function Obras() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Buscar obra..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <Button onClick={() => setOpen(true)} size="sm">
-          <Plus className="mr-1 h-4 w-4" /> Nova
-        </Button>
+        <Button onClick={() => setOpen(true)} size="sm"><Plus className="mr-1 h-4 w-4" /> Nova</Button>
       </div>
 
       {isLoading ? (
@@ -132,6 +144,7 @@ export default function Obras() {
         <div className="grid gap-3">
           {filtered.map((item) => {
             const st = statusMap[item.status] || statusMap.em_andamento;
+            const prazos = getPrazos(item);
             return (
               <Card key={item.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleEdit(item)}>
                 <CardContent className="p-4">
@@ -142,21 +155,23 @@ export default function Obras() {
                       </div>
                       <div className="min-w-0">
                         <p className="font-semibold truncate">{item.nome}</p>
-                        {item.endereco && (
+                        {(item.local || item.endereco) && (
                           <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <MapPin className="h-3 w-3 shrink-0" /> <span className="truncate">{item.endereco}</span>
+                            <MapPin className="h-3 w-3 shrink-0" /> <span className="truncate">{item.local || item.endereco}</span>
                           </p>
                         )}
                       </div>
                     </div>
                     <Badge variant={st.variant} className="shrink-0">{st.label}</Badge>
                   </div>
-                  <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                    {item.responsavel && <span>Resp: {item.responsavel}</span>}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
+                    {item.contratante && <span>Contratante: {item.contratante}</span>}
+                    {item.contrato && <span>Contrato: {item.contrato}</span>}
                     {item.data_inicio && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" /> {format(new Date(item.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
-                      </span>
+                      <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> {format(new Date(item.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</span>
+                    )}
+                    {prazos && (
+                      <span>Prazo: {prazos.decorrido}d decorridos / {prazos.aVencer}d a vencer</span>
                     )}
                   </div>
                 </CardContent>
@@ -167,18 +182,29 @@ export default function Obras() {
       )}
 
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Editar' : 'Nova'} Obra</DialogTitle></DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
               <FormField control={form.control} name="nome" render={({ field }) => (
-                <FormItem><FormLabel>Nome</FormLabel><FormControl><Input placeholder="Nome da obra" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Nome *</FormLabel><FormControl><Input placeholder="Nome da obra" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <div className="grid grid-cols-2 gap-3">
+                <FormField control={form.control} name="contrato" render={({ field }) => (
+                  <FormItem><FormLabel>Contrato</FormLabel><FormControl><Input placeholder="Nº contrato" {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="contratante" render={({ field }) => (
+                  <FormItem><FormLabel>Contratante</FormLabel><FormControl><Input placeholder="Nome" {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+              <FormField control={form.control} name="local" render={({ field }) => (
+                <FormItem><FormLabel>Local</FormLabel><FormControl><Input placeholder="Local da obra" {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="endereco" render={({ field }) => (
-                <FormItem><FormLabel>Endereço</FormLabel><FormControl><Input placeholder="Endereço" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Endereço</FormLabel><FormControl><Input placeholder="Endereço" {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="responsavel" render={({ field }) => (
-                <FormItem><FormLabel>Responsável</FormLabel><FormControl><Input placeholder="Nome do responsável" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Responsável</FormLabel><FormControl><Input placeholder="Nome do responsável" {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="status" render={({ field }) => (
                 <FormItem><FormLabel>Status</FormLabel>
@@ -194,12 +220,15 @@ export default function Obras() {
               )} />
               <div className="grid grid-cols-2 gap-3">
                 <FormField control={form.control} name="data_inicio" render={({ field }) => (
-                  <FormItem><FormLabel>Início</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Início</FormLabel><FormControl><Input type="date" {...field} /></FormControl></FormItem>
                 )} />
                 <FormField control={form.control} name="data_previsao" render={({ field }) => (
-                  <FormItem><FormLabel>Previsão</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Previsão</FormLabel><FormControl><Input type="date" {...field} /></FormControl></FormItem>
                 )} />
               </div>
+              <FormField control={form.control} name="prazo_contratual_dias" render={({ field }) => (
+                <FormItem><FormLabel>Prazo Contratual (dias)</FormLabel><FormControl><Input type="number" placeholder="Ex: 365" {...field} /></FormControl></FormItem>
+              )} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
                 <Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? 'Salvando...' : 'Salvar'}</Button>
