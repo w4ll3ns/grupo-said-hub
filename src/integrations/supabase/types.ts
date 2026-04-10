@@ -132,6 +132,44 @@ export type Database = {
         }
         Relationships: []
       }
+      equipamentos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          empresa_id: string
+          id: string
+          nome: string
+          tipo: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          empresa_id: string
+          id?: string
+          nome: string
+          tipo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          nome?: string
+          tipo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipamentos_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       formas_pagamento: {
         Row: {
           ativa: boolean
@@ -160,6 +198,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "formas_pagamento_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      funcionarios: {
+        Row: {
+          ativo: boolean
+          cargo: string | null
+          created_at: string
+          empresa_id: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          cargo?: string | null
+          created_at?: string
+          empresa_id: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          cargo?: string | null
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funcionarios_empresa_id_fkey"
             columns: ["empresa_id"]
             isOneToOne: false
             referencedRelation: "empresas"
@@ -266,6 +342,53 @@ export type Database = {
             columns: ["plano_receita_id"]
             isOneToOne: false
             referencedRelation: "plano_receitas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      obras: {
+        Row: {
+          created_at: string
+          data_inicio: string | null
+          data_previsao: string | null
+          empresa_id: string
+          endereco: string | null
+          id: string
+          nome: string
+          responsavel: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data_inicio?: string | null
+          data_previsao?: string | null
+          empresa_id: string
+          endereco?: string | null
+          id?: string
+          nome: string
+          responsavel?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data_inicio?: string | null
+          data_previsao?: string | null
+          empresa_id?: string
+          endereco?: string | null
+          id?: string
+          nome?: string
+          responsavel?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obras_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
             referencedColumns: ["id"]
           },
         ]
@@ -461,6 +584,179 @@ export type Database = {
         }
         Relationships: []
       }
+      rdo_atividades: {
+        Row: {
+          descricao: string
+          id: string
+          quantidade: number | null
+          rdo_id: string
+          unidade: string | null
+        }
+        Insert: {
+          descricao: string
+          id?: string
+          quantidade?: number | null
+          rdo_id: string
+          unidade?: string | null
+        }
+        Update: {
+          descricao?: string
+          id?: string
+          quantidade?: number | null
+          rdo_id?: string
+          unidade?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdo_atividades_rdo_id_fkey"
+            columns: ["rdo_id"]
+            isOneToOne: false
+            referencedRelation: "rdos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rdo_equipamentos: {
+        Row: {
+          equipamento_id: string
+          horas_uso: number | null
+          id: string
+          observacao: string | null
+          operacional: boolean
+          rdo_id: string
+        }
+        Insert: {
+          equipamento_id: string
+          horas_uso?: number | null
+          id?: string
+          observacao?: string | null
+          operacional?: boolean
+          rdo_id: string
+        }
+        Update: {
+          equipamento_id?: string
+          horas_uso?: number | null
+          id?: string
+          observacao?: string | null
+          operacional?: boolean
+          rdo_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdo_equipamentos_equipamento_id_fkey"
+            columns: ["equipamento_id"]
+            isOneToOne: false
+            referencedRelation: "equipamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rdo_equipamentos_rdo_id_fkey"
+            columns: ["rdo_id"]
+            isOneToOne: false
+            referencedRelation: "rdos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rdo_funcionarios: {
+        Row: {
+          funcionario_id: string
+          horas: number | null
+          id: string
+          observacao: string | null
+          presente: boolean
+          rdo_id: string
+        }
+        Insert: {
+          funcionario_id: string
+          horas?: number | null
+          id?: string
+          observacao?: string | null
+          presente?: boolean
+          rdo_id: string
+        }
+        Update: {
+          funcionario_id?: string
+          horas?: number | null
+          id?: string
+          observacao?: string | null
+          presente?: boolean
+          rdo_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdo_funcionarios_funcionario_id_fkey"
+            columns: ["funcionario_id"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rdo_funcionarios_rdo_id_fkey"
+            columns: ["rdo_id"]
+            isOneToOne: false
+            referencedRelation: "rdos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rdos: {
+        Row: {
+          clima: string
+          condicao_trabalho: string
+          created_at: string
+          created_by: string | null
+          data: string
+          empresa_id: string
+          id: string
+          obra_id: string
+          observacoes: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          clima?: string
+          condicao_trabalho?: string
+          created_at?: string
+          created_by?: string | null
+          data: string
+          empresa_id: string
+          id?: string
+          obra_id: string
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          clima?: string
+          condicao_trabalho?: string
+          created_at?: string
+          created_by?: string | null
+          data?: string
+          empresa_id?: string
+          id?: string
+          obra_id?: string
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rdos_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rdos_obra_id_fkey"
+            columns: ["obra_id"]
+            isOneToOne: false
+            referencedRelation: "obras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       usuario_empresas: {
         Row: {
           created_at: string
@@ -509,7 +805,15 @@ export type Database = {
           obra_id?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "usuario_obras_obra_id_fkey"
+            columns: ["obra_id"]
+            isOneToOne: false
+            referencedRelation: "obras"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       usuario_perfis: {
         Row: {
