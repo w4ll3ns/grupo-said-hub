@@ -102,6 +102,121 @@ export type Database = {
           },
         ]
       }
+      cotacao_itens: {
+        Row: {
+          cotacao_id: string
+          id: string
+          quantidade: number
+          solicitacao_item_id: string
+          valor_total: number
+          valor_unitario: number
+        }
+        Insert: {
+          cotacao_id: string
+          id?: string
+          quantidade?: number
+          solicitacao_item_id: string
+          valor_total?: number
+          valor_unitario?: number
+        }
+        Update: {
+          cotacao_id?: string
+          id?: string
+          quantidade?: number
+          solicitacao_item_id?: string
+          valor_total?: number
+          valor_unitario?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cotacao_itens_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cotacao_itens_solicitacao_item_id_fkey"
+            columns: ["solicitacao_item_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacao_itens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cotacoes: {
+        Row: {
+          condicao_pagamento: string | null
+          created_at: string
+          data_cotacao: string
+          data_validade: string | null
+          empresa_id: string
+          fornecedor_id: string
+          id: string
+          numero: number | null
+          observacoes: string | null
+          prazo_entrega: string | null
+          solicitacao_id: string
+          status: string
+          updated_at: string
+          valor_total: number
+        }
+        Insert: {
+          condicao_pagamento?: string | null
+          created_at?: string
+          data_cotacao?: string
+          data_validade?: string | null
+          empresa_id: string
+          fornecedor_id: string
+          id?: string
+          numero?: number | null
+          observacoes?: string | null
+          prazo_entrega?: string | null
+          solicitacao_id: string
+          status?: string
+          updated_at?: string
+          valor_total?: number
+        }
+        Update: {
+          condicao_pagamento?: string | null
+          created_at?: string
+          data_cotacao?: string
+          data_validade?: string | null
+          empresa_id?: string
+          fornecedor_id?: string
+          id?: string
+          numero?: number | null
+          observacoes?: string | null
+          prazo_entrega?: string | null
+          solicitacao_id?: string
+          status?: string
+          updated_at?: string
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cotacoes_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cotacoes_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "fornecedores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cotacoes_solicitacao_id_fkey"
+            columns: ["solicitacao_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacoes_compra"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           ativa: boolean
@@ -198,6 +313,65 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "formas_pagamento_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fornecedores: {
+        Row: {
+          ativo: boolean
+          cidade: string | null
+          cnpj_cpf: string | null
+          created_at: string
+          email: string | null
+          empresa_id: string
+          endereco: string | null
+          estado: string | null
+          id: string
+          nome_fantasia: string | null
+          observacoes: string | null
+          razao_social: string
+          telefone: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          cidade?: string | null
+          cnpj_cpf?: string | null
+          created_at?: string
+          email?: string | null
+          empresa_id: string
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          nome_fantasia?: string | null
+          observacoes?: string | null
+          razao_social: string
+          telefone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          cidade?: string | null
+          cnpj_cpf?: string | null
+          created_at?: string
+          email?: string | null
+          empresa_id?: string
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          nome_fantasia?: string | null
+          observacoes?: string | null
+          razao_social?: string
+          telefone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fornecedores_empresa_id_fkey"
             columns: ["empresa_id"]
             isOneToOne: false
             referencedRelation: "empresas"
@@ -452,6 +626,73 @@ export type Database = {
           },
         ]
       }
+      pedidos_compra: {
+        Row: {
+          cotacao_id: string | null
+          created_at: string
+          data_entrega_prevista: string | null
+          data_pedido: string
+          empresa_id: string
+          fornecedor_id: string
+          id: string
+          numero: number | null
+          observacoes: string | null
+          status: string
+          updated_at: string
+          valor_total: number
+        }
+        Insert: {
+          cotacao_id?: string | null
+          created_at?: string
+          data_entrega_prevista?: string | null
+          data_pedido?: string
+          empresa_id: string
+          fornecedor_id: string
+          id?: string
+          numero?: number | null
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+          valor_total?: number
+        }
+        Update: {
+          cotacao_id?: string | null
+          created_at?: string
+          data_entrega_prevista?: string | null
+          data_pedido?: string
+          empresa_id?: string
+          fornecedor_id?: string
+          id?: string
+          numero?: number | null
+          observacoes?: string | null
+          status?: string
+          updated_at?: string
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_compra_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_compra_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_compra_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "fornecedores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       perfil_permissoes: {
         Row: {
           aprovar: boolean
@@ -603,6 +844,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "plano_receitas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      produtos: {
+        Row: {
+          ativo: boolean
+          categoria: string | null
+          created_at: string
+          descricao: string | null
+          empresa_id: string
+          id: string
+          nome: string
+          unidade: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          categoria?: string | null
+          created_at?: string
+          descricao?: string | null
+          empresa_id: string
+          id?: string
+          nome: string
+          unidade?: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          categoria?: string | null
+          created_at?: string
+          descricao?: string | null
+          empresa_id?: string
+          id?: string
+          nome?: string
+          unidade?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "produtos_empresa_id_fkey"
             columns: ["empresa_id"]
             isOneToOne: false
             referencedRelation: "empresas"
@@ -927,6 +1212,133 @@ export type Database = {
           },
           {
             foreignKeyName: "rdos_obra_id_fkey"
+            columns: ["obra_id"]
+            isOneToOne: false
+            referencedRelation: "obras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      solicitacao_itens: {
+        Row: {
+          descricao: string
+          id: string
+          observacao: string | null
+          produto_id: string | null
+          quantidade: number
+          solicitacao_id: string
+          unidade: string
+        }
+        Insert: {
+          descricao: string
+          id?: string
+          observacao?: string | null
+          produto_id?: string | null
+          quantidade?: number
+          solicitacao_id: string
+          unidade?: string
+        }
+        Update: {
+          descricao?: string
+          id?: string
+          observacao?: string | null
+          produto_id?: string | null
+          quantidade?: number
+          solicitacao_id?: string
+          unidade?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacao_itens_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacao_itens_solicitacao_id_fkey"
+            columns: ["solicitacao_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacoes_compra"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      solicitacoes_compra: {
+        Row: {
+          aprovado_em: string | null
+          aprovado_por: string | null
+          centro_custo_id: string | null
+          created_at: string
+          data_necessidade: string | null
+          data_solicitacao: string
+          empresa_id: string
+          id: string
+          justificativa: string | null
+          motivo_rejeicao: string | null
+          numero: number | null
+          obra_id: string | null
+          observacoes: string | null
+          prioridade: string
+          solicitante_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          centro_custo_id?: string | null
+          created_at?: string
+          data_necessidade?: string | null
+          data_solicitacao?: string
+          empresa_id: string
+          id?: string
+          justificativa?: string | null
+          motivo_rejeicao?: string | null
+          numero?: number | null
+          obra_id?: string | null
+          observacoes?: string | null
+          prioridade?: string
+          solicitante_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          centro_custo_id?: string | null
+          created_at?: string
+          data_necessidade?: string | null
+          data_solicitacao?: string
+          empresa_id?: string
+          id?: string
+          justificativa?: string | null
+          motivo_rejeicao?: string | null
+          numero?: number | null
+          obra_id?: string | null
+          observacoes?: string | null
+          prioridade?: string
+          solicitante_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacoes_compra_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_compra_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_compra_obra_id_fkey"
             columns: ["obra_id"]
             isOneToOne: false
             referencedRelation: "obras"
