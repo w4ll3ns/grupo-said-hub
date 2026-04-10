@@ -14,6 +14,94 @@ export type Database = {
   }
   public: {
     Tables: {
+      centros_custo: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          empresa_id: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          empresa_id: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          empresa_id?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "centros_custo_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contas_bancarias: {
+        Row: {
+          agencia: string | null
+          ativa: boolean
+          banco: string | null
+          conta: string | null
+          created_at: string
+          empresa_id: string
+          id: string
+          nome: string
+          saldo_inicial: number
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          agencia?: string | null
+          ativa?: boolean
+          banco?: string | null
+          conta?: string | null
+          created_at?: string
+          empresa_id: string
+          id?: string
+          nome: string
+          saldo_inicial?: number
+          tipo?: string
+          updated_at?: string
+        }
+        Update: {
+          agencia?: string | null
+          ativa?: boolean
+          banco?: string | null
+          conta?: string | null
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          nome?: string
+          saldo_inicial?: number
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contas_bancarias_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           ativa: boolean
@@ -43,6 +131,41 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      formas_pagamento: {
+        Row: {
+          ativa: boolean
+          created_at: string
+          empresa_id: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativa?: boolean
+          created_at?: string
+          empresa_id: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativa?: boolean
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "formas_pagamento_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       perfil_permissoes: {
         Row: {
@@ -119,6 +242,82 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "perfis_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plano_despesas: {
+        Row: {
+          ativa: boolean
+          categoria: string
+          created_at: string
+          empresa_id: string
+          id: string
+          subcategoria: string
+          updated_at: string
+        }
+        Insert: {
+          ativa?: boolean
+          categoria: string
+          created_at?: string
+          empresa_id: string
+          id?: string
+          subcategoria: string
+          updated_at?: string
+        }
+        Update: {
+          ativa?: boolean
+          categoria?: string
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          subcategoria?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plano_despesas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plano_receitas: {
+        Row: {
+          ativa: boolean
+          categoria: string
+          created_at: string
+          empresa_id: string
+          id: string
+          subcategoria: string
+          updated_at: string
+        }
+        Insert: {
+          ativa?: boolean
+          categoria: string
+          created_at?: string
+          empresa_id: string
+          id?: string
+          subcategoria: string
+          updated_at?: string
+        }
+        Update: {
+          ativa?: boolean
+          categoria?: string
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          subcategoria?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plano_receitas_empresa_id_fkey"
             columns: ["empresa_id"]
             isOneToOne: false
             referencedRelation: "empresas"
