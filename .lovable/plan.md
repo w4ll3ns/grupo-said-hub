@@ -1,66 +1,59 @@
 
+Revisei o problema e o diagnóstico ficou claro: o bloqueio atual não é mais de política de acesso. Eu confirmei que:
 
-# Correção de RLS no Módulo de Administração
-
-## Problema identificado
-
-O erro "new row violates row-level security policy for table usuario_perfis" ocorre porque as políticas RLS de várias tabelas administrativas não permitem que o administrador faça operações de escrita em registros de outros usuários.
-
-### Tabelas com RLS insuficiente para admin
-
-| Tabela | SELECT | INSERT/UPDATE/DELETE | Problema |
-|--------|--------|---------------------|----------|
-| `profiles` | OK (admin vê todos) | Apenas `id = auth.uid()` | Admin não consegue editar perfil de outro usuário |
-| `usuario_perfis` | OK (admin vê todos) | Apenas via `is_admin()` no policy ALL | DELETE antes do INSERT pode falhar se policy não cobre corretamente |
-| `usuario_empresas` | OK (admin vê todos) | Apenas via `is_admin()` no policy ALL | Mesmo problema |
-
-O policy `ALL` com `is_admin(auth.uid())` deveria cobrir INSERT/UPDATE/DELETE, mas a ausência de `WITH CHECK` explícito pode causar falhas no INSERT. Vou verificar e corrigir.
+- seu usuário continua autenticado;
+- seus vínculos com as empresas ainda existem;
+- o perfil de sistema `Administrador` continua existindo e com permissões completas;
+- o que sumiu foi o vínculo do seu usuário na tabela `usuario_perfis`, por isso `is_admin()` está retornando `false` e suas permissões vêm vazias.
 
 ## Plano de correção
 
-### Migração SQL
+### 1) Restaurar seu acesso agora
+Vou fazer uma correção pontual no backend para recriar o vínculo do seu usuário com o perfil `Administrador` já existente.
 
-1. **`profiles`** — Adicionar policy para admin poder fazer UPDATE em qualquer profile:
-```sql
-CREATE POLICY "Admins update all profiles"
-ON public.profiles FOR UPDATE TO authenticated
-USING (is_admin(auth.uid()))
-WITH CHECK (is_admin(auth.uid()));
-```
+Depois disso, vou validar:
+- `is_admin()` voltando para `true`;
+- carregamento de permissões novamente;
+- retorno do acesso ao módulo de Administração.
 
-2. **`usuario_perfis`** — Substituir o policy ALL genérico por policies explícitas com `WITH CHECK` para garantir que INSERT funcione:
-```sql
--- Drop existing ALL policy and recreate with explicit WITH CHECK
-DROP POLICY "Admins manage perfil links" ON public.usuario_perfis;
-CREATE POLICY "Admins manage perfil links"
-ON public.usuario_perfis FOR ALL TO authenticated
-USING (is_admin(auth.uid()))
-WITH CHECK (is_admin(auth.uid()));
-```
+### 2) Impedir novo auto-bloqueio no backend
+Vou adicionar travas de segurança no banco para impedir que o próprio usuário autenticado:
+- remova seu último vínculo com o perfil `Administrador`;
+- fique sem nenhuma empresa vinculada;
+- desative o próprio usuário.
 
-3. **`usuario_empresas`** — Mesmo tratamento:
-```sql
-DROP POLICY "Admins manage empresa links" ON public.usuario_empresas;
-CREATE POLICY "Admins manage empresa links"
-ON public.usuario_empresas FOR ALL TO authenticated
-USING (is_admin(auth.uid()))
-WITH CHECK (is_admin(auth.uid()));
-```
+Isso será feito com validações no backend, para a proteção valer mesmo se houver bug na interface.
 
-### Código — Ajustes menores em `Usuarios.tsx`
+### 3) Corrigir a tela de Usuários
+Em `src/pages/admin/Usuarios.tsx`, vou:
+- detectar quando o administrador estiver editando a si mesmo;
+- bloquear a troca do próprio perfil para algo diferente de `Administrador`;
+- bloquear salvar sem empresa vinculada;
+- bloquear desativar o próprio usuário;
+- substituir o fluxo atual de “deletar tudo e reinserir” por uma sincronização segura, para não perder o acesso no meio da operação;
+- atualizar também as queries de permissões e empresas após salvar.
 
-- Corrigir a sincronização de estado (o padrão atual usando `useState` como efeito é bugado — substituir por `useEffect`)
-- Garantir que as queries são invalidadas corretamente após save
+### 4) Alinhar o módulo administrativo nas permissões
+Hoje há uma inconsistência: a matriz de permissões usa `admin`, mas o menu lateral verifica `administracao`.
 
-### Resumo dos arquivos
+Vou padronizar isso para um único identificador e alinhar:
+- `src/components/layout/AppSidebar.tsx`
+- `src/hooks/usePermissions.tsx`
+- hooks ligados ao carregamento do contexto de acesso
 
-| Arquivo | Ação |
-|---------|------|
-| Migração SQL | Corrigir RLS de `profiles`, `usuario_perfis`, `usuario_empresas` |
-| `src/pages/admin/Usuarios.tsx` | Corrigir sync de estado com useEffect |
+Isso garante que os perfis de acesso administrativos funcionem de forma efetiva e consistente para todos os usuários.
 
-## Detalhes técnicos
-- O problema principal é que policies `FOR ALL` sem `TO authenticated` usam role `public`, e o `auth.uid()` retorna null para requests não autenticados. Trocar para `TO authenticated` resolve.
-- O policy de UPDATE do `profiles` precisa incluir admin override explícito.
-- Sem alteração em Empresas.tsx ou Perfis.tsx — os problemas são exclusivamente de RLS.
+## Arquivos envolvidos
+- correção pontual de dados no backend
+- migração SQL de proteção contra auto-bloqueio
+- `src/pages/admin/Usuarios.tsx`
+- `src/components/layout/AppSidebar.tsx`
+- `src/hooks/usePermissions.tsx`
+- `src/hooks/useAuth.tsx`
+- `src/hooks/useEmpresa.tsx`
 
+## Resultado esperado
+- seu usuário volta a ser administrador;
+- você não consegue mais remover seu próprio acesso por engano;
+- vínculos usuário ↔ perfil ↔ empresa passam a ser respeitados corretamente;
+- permissões administrativas ficam consistentes para perfis padrão e customizados.
