@@ -1,54 +1,66 @@
 
 
-# Auditoria do Módulo de Administração
+# Correção de RLS no Módulo de Administração
 
-## Resultado por Página
+## Problema identificado
 
-| Página | Listagem | Criar | Editar | Excluir | Ativar/Desativar |
-|--------|----------|-------|--------|---------|------------------|
-| **Empresas** | OK | Botão sem ação | Sem edição | Sem exclusão | Sem toggle |
-| **Usuários** | OK | Botão sem ação | Sem edição | Sem exclusão | Sem toggle |
-| **Perfis** | OK | Botão sem ação | Sem edição | Sem exclusão | — |
-| **Configurações** | — | — | OK (empresa ativa) | — | — |
+O erro "new row violates row-level security policy for table usuario_perfis" ocorre porque as políticas RLS de várias tabelas administrativas não permitem que o administrador faça operações de escrita em registros de outros usuários.
 
-Todos os botões "Nova Empresa", "Convidar Usuário" e "Novo Perfil" são decorativos — não abrem nenhum dialog nem executam ação. Nenhuma linha das tabelas tem botões de editar ou excluir. O administrador consegue apenas visualizar os registros.
+### Tabelas com RLS insuficiente para admin
 
-## Plano de Implementação
+| Tabela | SELECT | INSERT/UPDATE/DELETE | Problema |
+|--------|--------|---------------------|----------|
+| `profiles` | OK (admin vê todos) | Apenas `id = auth.uid()` | Admin não consegue editar perfil de outro usuário |
+| `usuario_perfis` | OK (admin vê todos) | Apenas via `is_admin()` no policy ALL | DELETE antes do INSERT pode falhar se policy não cobre corretamente |
+| `usuario_empresas` | OK (admin vê todos) | Apenas via `is_admin()` no policy ALL | Mesmo problema |
 
-### Fase 1 — Empresas (`Empresas.tsx`)
-- **Criar**: Dialog com formulário (nome, CNPJ, email, telefone, endereço, cidade, estado, CEP) + insert na tabela `empresas` + insert em `usuario_empresas` para vincular o admin
-- **Editar**: Botão de editar em cada card → mesmo dialog pré-preenchido → update
-- **Ativar/Desativar**: Toggle no card para alterar `ativa` (sem excluir permanentemente, por integridade referencial)
-- **Selecionar**: Clicar no card define como `empresaAtiva` via `setEmpresaAtiva()`
+O policy `ALL` com `is_admin(auth.uid())` deveria cobrir INSERT/UPDATE/DELETE, mas a ausência de `WITH CHECK` explícito pode causar falhas no INSERT. Vou verificar e corrigir.
 
-### Fase 2 — Usuários (`Usuarios.tsx`)
-- **Editar**: Botão por linha → dialog para alterar nome, cargo, matrícula
-- **Ativar/Desativar**: Toggle de `ativo` por linha
-- **Atribuir Empresas**: Multi-select de empresas vinculadas (tabela `usuario_empresas`)
-- **Atribuir Perfil**: Select de perfil vinculado (tabela `usuario_perfis`)
-- Botão "Convidar" ficará desabilitado com tooltip explicando que o convite é feito pela tela de registro (não há invite flow via email no momento)
+## Plano de correção
 
-### Fase 3 — Perfis (`Perfis.tsx`)
-- **Criar**: Dialog com nome, descrição, empresa (opcional) → insert em `perfis`
-- **Editar**: Botão por linha → mesmo dialog pré-preenchido → update
-- **Excluir**: Botão com confirmação (AlertDialog) → delete, apenas para perfis não-sistema
-- **Gerenciar Permissões**: Ao clicar em um perfil, abrir dialog/painel com grid de checkboxes (módulo × funcionalidade × ações: visualizar/criar/editar/excluir/aprovar) que faz CRUD na tabela `perfil_permissoes`
+### Migração SQL
 
-### Fase 4 — Migração (se necessária)
-- Nenhuma alteração de schema necessária. Todas as tabelas já existem com as colunas corretas
-- RLS já está configurado para admin em todas as tabelas relevantes
+1. **`profiles`** — Adicionar policy para admin poder fazer UPDATE em qualquer profile:
+```sql
+CREATE POLICY "Admins update all profiles"
+ON public.profiles FOR UPDATE TO authenticated
+USING (is_admin(auth.uid()))
+WITH CHECK (is_admin(auth.uid()));
+```
 
-## Arquivos modificados
+2. **`usuario_perfis`** — Substituir o policy ALL genérico por policies explícitas com `WITH CHECK` para garantir que INSERT funcione:
+```sql
+-- Drop existing ALL policy and recreate with explicit WITH CHECK
+DROP POLICY "Admins manage perfil links" ON public.usuario_perfis;
+CREATE POLICY "Admins manage perfil links"
+ON public.usuario_perfis FOR ALL TO authenticated
+USING (is_admin(auth.uid()))
+WITH CHECK (is_admin(auth.uid()));
+```
+
+3. **`usuario_empresas`** — Mesmo tratamento:
+```sql
+DROP POLICY "Admins manage empresa links" ON public.usuario_empresas;
+CREATE POLICY "Admins manage empresa links"
+ON public.usuario_empresas FOR ALL TO authenticated
+USING (is_admin(auth.uid()))
+WITH CHECK (is_admin(auth.uid()));
+```
+
+### Código — Ajustes menores em `Usuarios.tsx`
+
+- Corrigir a sincronização de estado (o padrão atual usando `useState` como efeito é bugado — substituir por `useEffect`)
+- Garantir que as queries são invalidadas corretamente após save
+
+### Resumo dos arquivos
 
 | Arquivo | Ação |
 |---------|------|
-| `src/pages/admin/Empresas.tsx` | Reescrita com CRUD completo |
-| `src/pages/admin/Usuarios.tsx` | Reescrita com edição + atribuição de perfis/empresas |
-| `src/pages/admin/Perfis.tsx` | Reescrita com CRUD + grid de permissões |
+| Migração SQL | Corrigir RLS de `profiles`, `usuario_perfis`, `usuario_empresas` |
+| `src/pages/admin/Usuarios.tsx` | Corrigir sync de estado com useEffect |
 
 ## Detalhes técnicos
-- Padrão: `react-hook-form` + `zod` + `useMutation` + `Dialog` (mesmo dos outros módulos)
-- Permissões de perfis: grid com checkboxes renderizados dinamicamente a partir dos módulos/funcionalidades do sidebar
-- Sem migração de banco — tudo já existe
-- Import de `@/integrations/supabase/client` (corrigindo os imports atuais que usam `@/lib/supabase`)
+- O problema principal é que policies `FOR ALL` sem `TO authenticated` usam role `public`, e o `auth.uid()` retorna null para requests não autenticados. Trocar para `TO authenticated` resolve.
+- O policy de UPDATE do `profiles` precisa incluir admin override explícito.
+- Sem alteração em Empresas.tsx ou Perfis.tsx — os problemas são exclusivamente de RLS.
 
