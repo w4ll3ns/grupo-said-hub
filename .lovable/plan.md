@@ -1,35 +1,85 @@
 
 
-# Refinamentos visuais do PDF do RDO
+# Auditoria Completa do Módulo Financeiro
 
-## Resumo das mudanças
+## Resultado por Rota
 
-A maioria da estrutura já está implementada corretamente. Os refinamentos são ajustes pontuais no `generateRDOPdf.ts` e validação no formulário de Obras.
+| Rota | Status | Problemas |
+|------|--------|-----------|
+| `/financeiro` (Dashboard) | **Funcional** | OK — cards, gráficos, vencimentos |
+| `/financeiro/plano-contas` | **Funcional** | OK — CRUD receitas + despesas |
+| `/financeiro/contas-bancarias` | **Funcional** | OK — CRUD com saldo inicial |
+| `/financeiro/formas-pagamento` | **Funcional** | OK — CRUD simples |
+| `/financeiro/centros-custo` | **Funcional** | OK — CRUD com descrição |
+| `/financeiro/contas-pagar` | **Funcional** | OK — listagem, criação, edição, baixa |
+| `/financeiro/contas-receber` | **Funcional** | OK — mesmo componente LancamentosPage |
+| `/financeiro/lancamentos` | **Funcional** | OK — tabs pagar/receber unificadas |
+| `/financeiro/fluxo-caixa` | **Funcional** | OK — gráficos + KPIs + filtros |
+| `/financeiro/transferencias` | **Placeholder** | Sem funcionalidade real |
+| `/financeiro/dre` | **Placeholder** | Sem funcionalidade real |
+| `/financeiro/metas` | **Placeholder** | Sem funcionalidade real |
 
-## Mudanças no `src/utils/generateRDOPdf.ts`
+## Problemas Encontrados
 
-1. **Seção header com empresa**: Adicionar nome da empresa e CNPJ abaixo do logo/texto
-2. **Badge de status dinâmico**: Além de "APROVADO" (verde), adicionar "PENDENTE" (cinza #6b7280) e "RASCUNHO" (âmbar #f59e0b)
-3. **Remover título guarda-chuva**: Eliminar `sectionTitle('Horário de Trabalho / Condição Climática')` — as duas tabelas lado a lado já têm seus próprios headers internos
-4. **Prazo a vencer em vermelho**: Quando negativo, aplicar `color: RED` no texto
-5. **Atividades com badge colorido**: Trocar texto colorido por mini-tabela com `fillColor` para simular badge (fundo azul claro/verde claro/vermelho claro + texto escuro)
-6. **Fotos ocultas quando vazio**: Não renderizar seção "Registro Fotográfico" se `data.fotos.length === 0` (já implementado, mas verificar)
-7. **Intervalo formatado corretamente**: Garantir que `horario_intervalo` de funcionários use formato "HH:MM - HH:MM" — atualmente usa `fmt()` que só trata um horário; precisa tratar o campo composto
-8. **Rodapé com linha separadora**: Adicionar `canvas` com linha horizontal antes do texto do footer
-9. **Espaçamento `sectionTitle`**: Ajustar margin de `[0, 8, 0, 2]` para `[0, 10, 0, 4]`
-10. **Padding das células**: Adicionar `paddingLeft`/`paddingRight`/`paddingTop`/`paddingBottom` no layout das tabelas
+### 1. Dados inconsistentes — Lançamentos sem plano de contas
+4 lançamentos do tipo "pagar" têm `plano_despesa_id = NULL`. O trigger `validate_lancamento_plano` apenas impede cruzamento errado (despesa com plano_receita e vice-versa) mas **não obriga** a ter um plano vinculado. Isso faz com que apareçam "—" na coluna Categoria da tabela e os gráficos do Dashboard e DRE ficam incompletos.
 
-## Mudanças no `src/pages/rdo/Obras.tsx`
+**Correção**: Tornar `plano_id` obrigatório no schema Zod do formulário de lançamentos (campo `plano_id` deve usar `.min(1)` em vez de `.optional()`).
 
-1. Tornar obrigatórios no schema zod: `responsavel`, `data_inicio`, `prazo_contratual_dias`
-2. Manter backwards-compatible (campos existentes podem estar vazios, mas novos cadastros exigirão preenchimento)
+### 2. Lançamentos — Falta botão Excluir
+O CRUD de lançamentos não tem botão de exclusão. Só permite editar e baixar (marcar como pago). Deveria ter um botão de excluir com confirmação.
 
-## Arquivos editados
+### 3. Lançamentos — Sem exibição de dados relacionados na tabela
+A tabela de lançamentos mostra apenas Descrição, Valor, Vencimento, Status e Categoria. Não mostra Conta Bancária, Forma de Pagamento nem Centro de Custo vinculados — informação importante para gestão.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/utils/generateRDOPdf.ts` | Refinamentos visuais (badge dinâmico, bordas padding, intervalo, atividades badge, footer linha, remover título guarda-chuva) |
-| `src/pages/rdo/Obras.tsx` | Campos obrigatórios: responsável, data_inicio, prazo_contratual_dias |
+### 4. DRE, Transferências e Metas — Placeholders
+Três rotas no menu estão com placeholder sem funcionalidade. O DRE é o mais crítico pois depende apenas dos dados já existentes (lancamentos + plano de contas).
 
-Nenhuma migração de banco necessária — os campos já existem na tabela `obras`, apenas a validação no formulário será adicionada.
+### 5. Sidebar — Configurações leva a 404
+O menu "Configurações" (`/admin/configuracoes`) existe no sidebar mas não tem rota correspondente no `App.tsx`.
+
+### 6. Compras — Rotas 404
+Os itens de menu Solicitações, Cotações, Pedidos, Fornecedores e Catálogo no módulo Compras apontam para rotas inexistentes.
+
+## Plano de Correção (escopo financeiro)
+
+### Fase 1: Correções de integridade (LancamentosPage.tsx)
+- Tornar `plano_id` obrigatório no schema Zod
+- Adicionar botão de exclusão com confirmação (Dialog)
+- Adicionar colunas expandidas ou tooltip com conta bancária/forma pgto/centro de custo
+
+### Fase 2: Implementar DRE funcional
+- Criar página DRE com receitas e despesas agrupadas por categoria do plano de contas
+- Filtro por período (mês/trimestre/ano)
+- Resultado líquido (receitas - despesas)
+- Tabela hierárquica: Categoria > Subcategoria > Total
+
+### Fase 3: Implementar Transferências funcional
+- Formulário: conta origem, conta destino, valor, data, descrição
+- Necessita tabela `transferencias` no banco (migração)
+- Listagem com filtros
+
+### Fase 4: Implementar Metas funcional
+- Necessita tabela `metas_financeiras` no banco (migração)
+- Meta por categoria/período com valor alvo e acompanhamento vs realizado
+
+### Fase 5: Rota Configurações
+- Adicionar rota `/admin/configuracoes` no App.tsx (pelo menos placeholder)
+
+## Arquivos a editar
+
+| Arquivo | Ação |
+|---------|------|
+| `src/pages/financeiro/LancamentosPage.tsx` | plano_id obrigatório + botão excluir |
+| `src/pages/financeiro/DRE.tsx` | Reescrita completa com dados reais |
+| `src/pages/financeiro/Transferencias.tsx` | Implementação funcional |
+| `src/pages/financeiro/Metas.tsx` | Implementação funcional |
+| `src/App.tsx` | Rota `/admin/configuracoes` |
+| Migrações | Tabelas `transferencias` e `metas_financeiras` |
+
+## Recomendação de prioridade
+
+Sugiro implementar na ordem: **Fase 1** (correções de integridade) → **Fase 2** (DRE) → **Fase 3** (Transferências) → **Fase 4** (Metas) → **Fase 5** (Configurações).
+
+Posso começar pela Fase 1 + Fase 2 juntas, que são as mais impactantes e não precisam de migração de banco.
 
