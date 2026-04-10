@@ -19,6 +19,8 @@ import PlanoContas from "./pages/financeiro/PlanoContas";
 import ContasBancarias from "./pages/financeiro/ContasBancarias";
 import FormasPagamento from "./pages/financeiro/FormasPagamento";
 import CentrosCusto from "./pages/financeiro/CentrosCusto";
+import ContasPagar from "./pages/financeiro/ContasPagar";
+import ContasReceber from "./pages/financeiro/ContasReceber";
 import RDODashboard from "./pages/rdo/Dashboard";
 import ComprasDashboard from "./pages/compras/Dashboard";
 
