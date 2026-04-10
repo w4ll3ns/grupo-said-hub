@@ -1,78 +1,35 @@
 
 
-# Reescrita completa do PDF do RDO com pdfmake
+# Refinamentos visuais do PDF do RDO
 
-## Objetivo
-Substituir jsPDF/autoTable por **pdfmake** para gerar PDFs com suporte nativo a UTF-8 (fonte Roboto embutida), tabelas bordadas complexas e layout profissional idêntico ao padrão Sodexo/Vale.
+## Resumo das mudanças
 
-## Por que pdfmake?
-- Suporte nativo a UTF-8 com fonte Roboto — resolve 100% dos problemas de acentuação ("Relatório", "Função", "Condição", "Página")
-- Tabelas declarativas com bordas, merge de células, cores de fundo por linha
-- Layout de colunas lado a lado nativo (sem cálculos manuais de posição)
-- Paginação automática com headers/footers customizados
+A maioria da estrutura já está implementada corretamente. Os refinamentos são ajustes pontuais no `generateRDOPdf.ts` e validação no formulário de Obras.
+
+## Mudanças no `src/utils/generateRDOPdf.ts`
+
+1. **Seção header com empresa**: Adicionar nome da empresa e CNPJ abaixo do logo/texto
+2. **Badge de status dinâmico**: Além de "APROVADO" (verde), adicionar "PENDENTE" (cinza #6b7280) e "RASCUNHO" (âmbar #f59e0b)
+3. **Remover título guarda-chuva**: Eliminar `sectionTitle('Horário de Trabalho / Condição Climática')` — as duas tabelas lado a lado já têm seus próprios headers internos
+4. **Prazo a vencer em vermelho**: Quando negativo, aplicar `color: RED` no texto
+5. **Atividades com badge colorido**: Trocar texto colorido por mini-tabela com `fillColor` para simular badge (fundo azul claro/verde claro/vermelho claro + texto escuro)
+6. **Fotos ocultas quando vazio**: Não renderizar seção "Registro Fotográfico" se `data.fotos.length === 0` (já implementado, mas verificar)
+7. **Intervalo formatado corretamente**: Garantir que `horario_intervalo` de funcionários use formato "HH:MM - HH:MM" — atualmente usa `fmt()` que só trata um horário; precisa tratar o campo composto
+8. **Rodapé com linha separadora**: Adicionar `canvas` com linha horizontal antes do texto do footer
+9. **Espaçamento `sectionTitle`**: Ajustar margin de `[0, 8, 0, 2]` para `[0, 10, 0, 4]`
+10. **Padding das células**: Adicionar `paddingLeft`/`paddingRight`/`paddingTop`/`paddingBottom` no layout das tabelas
+
+## Mudanças no `src/pages/rdo/Obras.tsx`
+
+1. Tornar obrigatórios no schema zod: `responsavel`, `data_inicio`, `prazo_contratual_dias`
+2. Manter backwards-compatible (campos existentes podem estar vazios, mas novos cadastros exigirão preenchimento)
 
 ## Arquivos editados
 
-| Arquivo | Ação |
-|---------|------|
-| `package.json` | Adicionar `pdfmake` + `@types/pdfmake` |
-| `src/utils/generateRDOPdf.ts` | Reescrita completa usando pdfmake |
-| `src/utils/fetchAndGenerateRDOPdf.ts` | Sem mudanças (interface `RDOPdfData` mantida) |
+| Arquivo | Mudança |
+|---------|---------|
+| `src/utils/generateRDOPdf.ts` | Refinamentos visuais (badge dinâmico, bordas padding, intervalo, atividades badge, footer linha, remover título guarda-chuva) |
+| `src/pages/rdo/Obras.tsx` | Campos obrigatórios: responsável, data_inicio, prazo_contratual_dias |
 
-## Layout do PDF (seção por seção)
-
-### 1. Header/Footer de página (automático em todas as páginas)
-- **Header**: linha separadora fina
-- **Footer esquerdo**: "Relatório DD/MM/AAAA n° XXX" + badge status
-- **Footer direito**: "Página X / Y"
-
-### 2. Cabeçalho (tabela 2 colunas: 70%/30%)
-**Coluna esquerda**: logo (imagem base64 ou texto fallback) + tabela bordada com Obra, Local, Contratante/Responsável
-**Coluna direita**: tabela bordada com Relatório n°, Data, Dia da semana, Contrato, Prazo contratual/decorrido/a vencer
-**Badge verde** "Aprovado" no canto superior direito quando status = finalizado
-
-### 3. Horário + Clima (2 tabelas lado a lado, 50%/50%)
-- Tabela 1: Entrada/Saída, Intervalo, Horas trabalhadas (célula mesclada)
-- Tabela 2: Condição Climática com Manhã/Tarde × Tempo/Condição
-
-### 4. Mão de Obra
-- Título "Mão de Obra (N)" com fundo cinza #f3f4f6
-- Colunas: N° | Nome | Função | Entrada/Saída | Intervalo | Horas | Local
-- Zebra striping, horários em HH:MM
-
-### 5. Equipamentos (grid 6 colunas)
-- Tabela com 6 colunas por linha, nome centralizado + quantidade em negrito
-- Bordas em todas as células, preenche com vazio as últimas células
-
-### 6. Atividades
-- Colunas: Descrição | Status
-- Status com cores: azul (Em Andamento), verde (Concluída), vermelho (Paralisada)
-
-### 7. Observações
-- Bloco de texto simples com borda
-
-### 8. Fotos (grid 2 colunas)
-- Imagens carregadas como base64, altura ~180pt, borda fina cinza
-- Legenda abaixo de cada foto
-- Quebra de página automática
-
-### 9. Aprovações (tabela 2 colunas: CONTRATADA / CONTRATANTE)
-- Nome em negrito maiúsculas, cargo, matrícula
-- Badge verde "Aprovado DD/MM/AAAA HH:MM" ou badge cinza "Pendente"
-- Email abaixo
-
-## Padrões de estilo (pdfmake)
-- Margens: [57, 43, 57, 43] (≈20mm laterais, 15mm topo/base)
-- Fonte: Roboto 9pt (default do pdfmake)
-- Títulos de seção: 10pt bold, fundo #f3f4f6
-- Bordas: 0.5pt cor #9ca3af
-- Cabeçalhos coluna: bold, fundo #f9fafb
-- Zebra: #ffffff / #fafafa
-- Texto preto #000, labels secundários #6b7280
-
-## Detalhes técnicos
-- `pdfmake` já inclui fonte Roboto com suporte completo a acentos — não precisa de configuração extra
-- Imagens convertidas para base64 via fetch + FileReader (mesma lógica atual)
-- A interface `RDOPdfData` permanece idêntica — nenhuma mudança no `fetchAndGenerateRDOPdf.ts`
-- Nenhuma migração de banco necessária
+Nenhuma migração de banco necessária — os campos já existem na tabela `obras`, apenas a validação no formulário será adicionada.
 
