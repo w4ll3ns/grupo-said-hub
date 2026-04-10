@@ -112,8 +112,8 @@ export default function Solicitacoes() {
       const { data: sol, error } = await supabase.from('solicitacoes_compra').insert({
         empresa_id: empresaAtiva!.id,
         data_necessidade: values.data_necessidade ? format(values.data_necessidade, 'yyyy-MM-dd') : null,
-        obra_id: values.obra_id || null,
-        centro_custo_id: values.centro_custo_id || null,
+        obra_id: values.obra_id && values.obra_id !== '__none__' ? values.obra_id : null,
+        centro_custo_id: values.centro_custo_id && values.centro_custo_id !== '__none__' ? values.centro_custo_id : null,
         justificativa: values.justificativa || null,
         prioridade: values.prioridade,
         observacoes: values.observacoes || null,
