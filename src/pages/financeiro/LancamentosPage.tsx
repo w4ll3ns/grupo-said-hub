@@ -14,11 +14,13 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Plus, Pencil, Search, CalendarIcon, CheckCircle } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const schema = z.object({
@@ -29,7 +31,7 @@ const schema = z.object({
   conta_bancaria_id: z.string().optional().or(z.literal('')),
   forma_pagamento_id: z.string().optional().or(z.literal('')),
   centro_custo_id: z.string().optional().or(z.literal('')),
-  plano_id: z.string().optional().or(z.literal('')),
+  plano_id: z.string().min(1, 'Categoria é obrigatória'),
   observacoes: z.string().optional().or(z.literal('')),
 });
 type FormData = z.infer<typeof schema>;
@@ -80,6 +82,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
   const [editing, setEditing] = useState<Lancamento | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
+  const [deleteTarget, setDeleteTarget] = useState<Lancamento | null>(null);
 
   const planoTable = tipo === 'receber' ? 'plano_receitas' : 'plano_despesas';
   const planoFk = tipo === 'receber' ? 'plano_receita_id' : 'plano_despesa_id';
@@ -191,6 +194,19 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
     onError: () => toast.error('Erro ao baixar lançamento'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('lancamentos').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      toast.success('Lançamento excluído');
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error('Erro ao excluir lançamento'),
+  });
+
   const handleClose = () => {
     setOpen(false);
     setEditing(null);
@@ -220,12 +236,19 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
     .filter((i) => statusFilter === 'todos' || i.status === statusFilter)
     .filter((i) => i.descricao.toLowerCase().includes(search.toLowerCase()));
 
+  const getRelatedName = (id: string | null, list: { id: string; nome: string }[]) => {
+    if (!id) return null;
+    return list.find((x) => x.id === id)?.nome || null;
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        <p className="text-muted-foreground">{subtitle}</p>
-      </div>
+      {(title || subtitle) && (
+        <div>
+          {title && <h1 className="text-2xl font-bold tracking-tight">{title}</h1>}
+          {subtitle && <p className="text-muted-foreground">{subtitle}</p>}
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -263,13 +286,15 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Categoria</TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+                <TableHead>Conta</TableHead>
+                <TableHead>Centro Custo</TableHead>
+                <TableHead className="w-[120px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Nenhum lançamento encontrado
                   </TableCell>
                 </TableRow>
@@ -278,16 +303,35 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                   const planoId = tipo === 'receber' ? item.plano_receita_id : item.plano_despesa_id;
                   const plano = planoContas.find((p) => p.id === planoId);
                   const sc = statusConfig[item.status] || statusConfig.pendente;
+                  const contaNome = getRelatedName(item.conta_bancaria_id, contasBancarias);
+                  const ccNome = getRelatedName(item.centro_custo_id, centrosCusto);
+                  const fpNome = getRelatedName(item.forma_pagamento_id, formasPagamento);
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.descricao}</TableCell>
+                      <TableCell className="font-medium max-w-[200px] truncate">{item.descricao}</TableCell>
                       <TableCell>{formatBRL(item.valor)}</TableCell>
                       <TableCell>{formatDate(item.data_vencimento)}</TableCell>
                       <TableCell>
                         <Badge variant={sc.variant}>{sc.label}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">
                         {plano ? `${plano.categoria} > ${plano.subcategoria}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {contaNome ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="truncate block max-w-[100px]">{contaNome}</span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>{contaNome}</p>
+                              {fpNome && <p className="text-xs">Pgto: {fpNome}</p>}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {ccNome || '—'}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
@@ -299,6 +343,9 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                               <CheckCircle className="h-4 w-4 text-primary" />
                             </Button>
                           )}
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(item)} title="Excluir">
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -310,10 +357,35 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
         </div>
       )}
 
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir lançamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o lançamento "{deleteTarget?.descricao}"? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Create/Edit dialog */}
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar' : 'Novo'} Lançamento</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Atualize os dados do lançamento.' : 'Preencha os dados do novo lançamento.'}
+            </DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
@@ -335,7 +407,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                 )} />
                 <FormField control={form.control} name="plano_id" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{tipo === 'receber' ? 'Plano de Receita' : 'Plano de Despesa'}</FormLabel>
+                    <FormLabel>{tipo === 'receber' ? 'Plano de Receita' : 'Plano de Despesa'} *</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>

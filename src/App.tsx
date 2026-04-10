@@ -32,10 +32,16 @@ import Funcionarios from "./pages/rdo/Funcionarios";
 import EquipamentosPage from "./pages/rdo/Equipamentos";
 import Relatorios from "./pages/rdo/Relatorios";
 import ComprasDashboard from "./pages/compras/Dashboard";
+import Solicitacoes from "./pages/compras/Solicitacoes";
+import Cotacoes from "./pages/compras/Cotacoes";
+import Pedidos from "./pages/compras/Pedidos";
+import Fornecedores from "./pages/compras/Fornecedores";
+import Catalogo from "./pages/compras/Catalogo";
 
 import Empresas from "./pages/admin/Empresas";
 import Usuarios from "./pages/admin/Usuarios";
 import Perfis from "./pages/admin/Perfis";
+import Configuracoes from "./pages/admin/Configuracoes";
 
 const queryClient = new QueryClient();
 
@@ -85,11 +91,17 @@ const App = () => (
 
               {/* Compras */}
               <Route path="/compras" element={<ComprasDashboard />} />
+              <Route path="/compras/solicitacoes" element={<Solicitacoes />} />
+              <Route path="/compras/cotacoes" element={<Cotacoes />} />
+              <Route path="/compras/pedidos" element={<Pedidos />} />
+              <Route path="/compras/fornecedores" element={<Fornecedores />} />
+              <Route path="/compras/catalogo" element={<Catalogo />} />
 
               {/* Admin */}
               <Route path="/admin/empresas" element={<Empresas />} />
               <Route path="/admin/usuarios" element={<Usuarios />} />
               <Route path="/admin/perfis" element={<Perfis />} />
+              <Route path="/admin/configuracoes" element={<Configuracoes />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
