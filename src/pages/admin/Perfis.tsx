@@ -120,8 +120,9 @@ export default function Perfis() {
       const existing = permissoes.find((p: any) => p.modulo === modulo && p.funcionalidade === funcionalidade);
 
       if (existing) {
-        const updatePayload = { visualizar: existing.visualizar, criar: existing.criar, editar: existing.editar, excluir: existing.excluir, aprovar: existing.aprovar, [acao]: value };
-        const { error } = await supabase.from('perfil_permissoes').update(updatePayload).eq('id', existing.id);
+        const updatePayload: Record<string, boolean> = {};
+        updatePayload[acao] = value;
+        const { error } = await (supabase.from('perfil_permissoes').update(updatePayload as any).eq('id', existing.id));
         if (error) throw error;
       } else {
         const row: any = {
