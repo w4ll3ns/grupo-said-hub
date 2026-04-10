@@ -152,7 +152,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
 
   const saveMutation = useMutation({
     mutationFn: async (values: FormData) => {
-      const payload: Record<string, unknown> = {
+      const payload = {
         descricao: values.descricao,
         valor: values.valor,
         data_emissao: format(values.data_emissao, 'yyyy-MM-dd'),
@@ -162,12 +162,12 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
         centro_custo_id: values.centro_custo_id || null,
         observacoes: values.observacoes || null,
         [planoFk]: values.plano_id || null,
-      };
+      } as any;
       if (editing) {
         const { error } = await supabase.from('lancamentos').update(payload).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('lancamentos').insert({ ...payload, tipo, empresa_id: empresaAtiva!.id });
+        const { error } = await supabase.from('lancamentos').insert({ ...payload, tipo, empresa_id: empresaAtiva!.id } as any);
         if (error) throw error;
       }
     },

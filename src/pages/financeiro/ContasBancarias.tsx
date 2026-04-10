@@ -79,7 +79,7 @@ export default function ContasBancarias() {
         const { error } = await supabase.from('contas_bancarias').update(payload).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('contas_bancarias').insert({ ...payload, empresa_id: empresaAtiva!.id });
+        const { error } = await supabase.from('contas_bancarias').insert({ ...payload, empresa_id: empresaAtiva!.id } as any);
         if (error) throw error;
       }
     },

@@ -63,7 +63,7 @@ function PlanoTab({ tipo }: { tipo: 'receitas' | 'despesas' }) {
         const { error } = await supabase.from(table).update(values).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from(table).insert({ ...values, empresa_id: empresaAtiva!.id });
+        const { error } = await supabase.from(table).insert({ ...values, empresa_id: empresaAtiva!.id } as any);
         if (error) throw error;
       }
     },

@@ -49,7 +49,7 @@ export default function FormasPagamento() {
         const { error } = await supabase.from('formas_pagamento').update(values).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('formas_pagamento').insert({ ...values, empresa_id: empresaAtiva!.id });
+        const { error } = await supabase.from('formas_pagamento').insert({ ...values, empresa_id: empresaAtiva!.id } as any);
         if (error) throw error;
       }
     },
