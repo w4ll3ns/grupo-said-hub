@@ -91,11 +91,17 @@ const App = () => (
 
               {/* Compras */}
               <Route path="/compras" element={<ComprasDashboard />} />
+              <Route path="/compras/solicitacoes" element={<Solicitacoes />} />
+              <Route path="/compras/cotacoes" element={<Cotacoes />} />
+              <Route path="/compras/pedidos" element={<Pedidos />} />
+              <Route path="/compras/fornecedores" element={<Fornecedores />} />
+              <Route path="/compras/catalogo" element={<Catalogo />} />
 
               {/* Admin */}
               <Route path="/admin/empresas" element={<Empresas />} />
               <Route path="/admin/usuarios" element={<Usuarios />} />
               <Route path="/admin/perfis" element={<Perfis />} />
+              <Route path="/admin/configuracoes" element={<Configuracoes />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
