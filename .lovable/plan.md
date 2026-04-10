@@ -1,85 +1,112 @@
 
 
-# Auditoria Completa do Módulo Financeiro
+# Implementação Completa do Módulo de Compras
 
-## Resultado por Rota
+## Resumo
 
-| Rota | Status | Problemas |
-|------|--------|-----------|
-| `/financeiro` (Dashboard) | **Funcional** | OK — cards, gráficos, vencimentos |
-| `/financeiro/plano-contas` | **Funcional** | OK — CRUD receitas + despesas |
-| `/financeiro/contas-bancarias` | **Funcional** | OK — CRUD com saldo inicial |
-| `/financeiro/formas-pagamento` | **Funcional** | OK — CRUD simples |
-| `/financeiro/centros-custo` | **Funcional** | OK — CRUD com descrição |
-| `/financeiro/contas-pagar` | **Funcional** | OK — listagem, criação, edição, baixa |
-| `/financeiro/contas-receber` | **Funcional** | OK — mesmo componente LancamentosPage |
-| `/financeiro/lancamentos` | **Funcional** | OK — tabs pagar/receber unificadas |
-| `/financeiro/fluxo-caixa` | **Funcional** | OK — gráficos + KPIs + filtros |
-| `/financeiro/transferencias` | **Placeholder** | Sem funcionalidade real |
-| `/financeiro/dre` | **Placeholder** | Sem funcionalidade real |
-| `/financeiro/metas` | **Placeholder** | Sem funcionalidade real |
+Criar 4 tabelas no banco de dados e implementar 6 páginas funcionais: Dashboard, Fornecedores (CRUD), Catálogo de Produtos (CRUD), Solicitações de Compra (com workflow de aprovação), Cotações (vinculadas a solicitações) e Pedidos de Compra (gerados a partir de cotações aprovadas).
 
-## Problemas Encontrados
+## Novas Tabelas (Migração)
 
-### 1. Dados inconsistentes — Lançamentos sem plano de contas
-4 lançamentos do tipo "pagar" têm `plano_despesa_id = NULL`. O trigger `validate_lancamento_plano` apenas impede cruzamento errado (despesa com plano_receita e vice-versa) mas **não obriga** a ter um plano vinculado. Isso faz com que apareçam "—" na coluna Categoria da tabela e os gráficos do Dashboard e DRE ficam incompletos.
+### 1. `fornecedores`
+- `id`, `empresa_id`, `razao_social`, `nome_fantasia`, `cnpj_cpf`, `email`, `telefone`, `endereco`, `cidade`, `estado`, `observacoes`, `ativo`, `created_at`, `updated_at`
+- RLS: admin + user_belongs_to_empresa
 
-**Correção**: Tornar `plano_id` obrigatório no schema Zod do formulário de lançamentos (campo `plano_id` deve usar `.min(1)` em vez de `.optional()`).
+### 2. `produtos`
+- `id`, `empresa_id`, `nome`, `descricao`, `unidade` (un, kg, m, m2, m3, l, cx, pct), `categoria`, `ativo`, `created_at`, `updated_at`
+- RLS: admin + user_belongs_to_empresa
 
-### 2. Lançamentos — Falta botão Excluir
-O CRUD de lançamentos não tem botão de exclusão. Só permite editar e baixar (marcar como pago). Deveria ter um botão de excluir com confirmação.
+### 3. `solicitacoes_compra`
+- `id`, `empresa_id`, `numero` (auto-increment via trigger), `solicitante_id` (auth.uid), `data_solicitacao`, `data_necessidade`, `obra_id` (nullable FK obras), `centro_custo_id` (nullable FK centros_custo), `justificativa`, `prioridade` (baixa/media/alta/urgente), `status` (rascunho/pendente/aprovada/rejeitada/cotacao/pedido/concluida/cancelada), `aprovado_por` (nullable), `aprovado_em` (nullable), `motivo_rejeicao` (nullable), `observacoes`, `created_at`, `updated_at`
+- RLS: admin + user_belongs_to_empresa
 
-### 3. Lançamentos — Sem exibição de dados relacionados na tabela
-A tabela de lançamentos mostra apenas Descrição, Valor, Vencimento, Status e Categoria. Não mostra Conta Bancária, Forma de Pagamento nem Centro de Custo vinculados — informação importante para gestão.
+### 4. `solicitacao_itens`
+- `id`, `solicitacao_id` (FK), `produto_id` (nullable FK), `descricao`, `quantidade`, `unidade`, `observacao`
+- RLS: via join com solicitacoes_compra.empresa_id
 
-### 4. DRE, Transferências e Metas — Placeholders
-Três rotas no menu estão com placeholder sem funcionalidade. O DRE é o mais crítico pois depende apenas dos dados já existentes (lancamentos + plano de contas).
+### 5. `cotacoes`
+- `id`, `empresa_id`, `solicitacao_id` (FK), `fornecedor_id` (FK), `numero`, `data_cotacao`, `data_validade`, `valor_total`, `condicao_pagamento`, `prazo_entrega`, `status` (pendente/aprovada/rejeitada), `observacoes`, `created_at`, `updated_at`
+- RLS: admin + user_belongs_to_empresa
 
-### 5. Sidebar — Configurações leva a 404
-O menu "Configurações" (`/admin/configuracoes`) existe no sidebar mas não tem rota correspondente no `App.tsx`.
+### 6. `cotacao_itens`
+- `id`, `cotacao_id` (FK), `solicitacao_item_id` (FK), `valor_unitario`, `quantidade`, `valor_total`
 
-### 6. Compras — Rotas 404
-Os itens de menu Solicitações, Cotações, Pedidos, Fornecedores e Catálogo no módulo Compras apontam para rotas inexistentes.
+### 7. `pedidos_compra`
+- `id`, `empresa_id`, `cotacao_id` (FK), `fornecedor_id` (FK), `numero`, `data_pedido`, `data_entrega_prevista`, `valor_total`, `status` (pendente/enviado/parcial/entregue/cancelado), `observacoes`, `created_at`, `updated_at`
+- RLS: admin + user_belongs_to_empresa
 
-## Plano de Correção (escopo financeiro)
+### Triggers
+- `set_solicitacao_numero` — auto-incrementa numero por empresa
+- `set_cotacao_numero` — idem
+- `set_pedido_numero` — idem
+- `update_updated_at` — reusa trigger existente
 
-### Fase 1: Correções de integridade (LancamentosPage.tsx)
-- Tornar `plano_id` obrigatório no schema Zod
-- Adicionar botão de exclusão com confirmação (Dialog)
-- Adicionar colunas expandidas ou tooltip com conta bancária/forma pgto/centro de custo
+## Páginas a Implementar
 
-### Fase 2: Implementar DRE funcional
-- Criar página DRE com receitas e despesas agrupadas por categoria do plano de contas
-- Filtro por período (mês/trimestre/ano)
-- Resultado líquido (receitas - despesas)
-- Tabela hierárquica: Categoria > Subcategoria > Total
+### 1. `Fornecedores.tsx` — CRUD completo
+- Tabela com razão social, CNPJ, cidade/estado, telefone, email, status
+- Dialog para criar/editar com validação Zod
+- Busca por nome/CNPJ
+- Padrão idêntico ao LancamentosPage
 
-### Fase 3: Implementar Transferências funcional
-- Formulário: conta origem, conta destino, valor, data, descrição
-- Necessita tabela `transferencias` no banco (migração)
-- Listagem com filtros
+### 2. `Catalogo.tsx` — CRUD de produtos/materiais
+- Tabela com nome, categoria, unidade, status
+- Dialog criar/editar
+- Filtro por categoria
 
-### Fase 4: Implementar Metas funcional
-- Necessita tabela `metas_financeiras` no banco (migração)
-- Meta por categoria/período com valor alvo e acompanhamento vs realizado
+### 3. `Solicitacoes.tsx` — Workflow completo
+- Listagem com número, data, solicitante, obra, prioridade, status (badges coloridos)
+- Dialog de criação com itens dinâmicos (adicionar/remover linhas de produtos)
+- Ações: Enviar para Aprovação (rascunho→pendente), Aprovar (pendente→aprovada), Rejeitar (pendente→rejeitada com motivo), Cancelar
+- Permissão `aprovar` do módulo compras controla quem pode aprovar
 
-### Fase 5: Rota Configurações
-- Adicionar rota `/admin/configuracoes` no App.tsx (pelo menos placeholder)
+### 4. `Cotacoes.tsx` — Vinculada a solicitações aprovadas
+- Listagem com número, fornecedor, solicitação, valor total, validade, status
+- Dialog de criação: selecionar solicitação aprovada + fornecedor + preencher valores por item
+- Ação: Aprovar cotação (melhor preço) → permite gerar pedido
 
-## Arquivos a editar
+### 5. `Pedidos.tsx` — Gerado a partir de cotação aprovada
+- Listagem com número, fornecedor, valor, data entrega, status
+- Ação: Gerar Pedido a partir de cotação aprovada
+- Status tracking: pendente → enviado → parcial → entregue
+
+### 6. `Dashboard.tsx` — KPIs e visão geral
+- Cards: Total Solicitações (mês), Pendentes Aprovação, Pedidos em Aberto, Valor Total Pedidos (mês)
+- Tabela: Últimas solicitações pendentes
+- Gráfico: Compras por mês (últimos 6 meses)
+
+## Workflow de Aprovação
+
+```text
+Solicitação:
+  rascunho → pendente → aprovada → cotacao → pedido → concluida
+                       → rejeitada
+                       → cancelada
+
+Cotação:
+  pendente → aprovada → (gera pedido)
+           → rejeitada
+
+Pedido:
+  pendente → enviado → parcial → entregue
+           → cancelado
+```
+
+## Arquivos
 
 | Arquivo | Ação |
 |---------|------|
-| `src/pages/financeiro/LancamentosPage.tsx` | plano_id obrigatório + botão excluir |
-| `src/pages/financeiro/DRE.tsx` | Reescrita completa com dados reais |
-| `src/pages/financeiro/Transferencias.tsx` | Implementação funcional |
-| `src/pages/financeiro/Metas.tsx` | Implementação funcional |
-| `src/App.tsx` | Rota `/admin/configuracoes` |
-| Migrações | Tabelas `transferencias` e `metas_financeiras` |
+| Migração SQL | 7 tabelas + 3 triggers + RLS |
+| `src/pages/compras/Fornecedores.tsx` | Reescrita CRUD completo |
+| `src/pages/compras/Catalogo.tsx` | Reescrita CRUD completo |
+| `src/pages/compras/Solicitacoes.tsx` | Reescrita com workflow |
+| `src/pages/compras/Cotacoes.tsx` | Reescrita com vínculo solicitação |
+| `src/pages/compras/Pedidos.tsx` | Reescrita com geração automática |
+| `src/pages/compras/Dashboard.tsx` | Reescrita com KPIs reais |
 
-## Recomendação de prioridade
-
-Sugiro implementar na ordem: **Fase 1** (correções de integridade) → **Fase 2** (DRE) → **Fase 3** (Transferências) → **Fase 4** (Metas) → **Fase 5** (Configurações).
-
-Posso começar pela Fase 1 + Fase 2 juntas, que são as mais impactantes e não precisam de migração de banco.
+## Detalhes técnicos
+- Segue padrões existentes: `useEmpresa()`, `useQuery/useMutation`, `react-hook-form + zod`, componentes shadcn/ui
+- Todas as tabelas com RLS usando `is_admin` + `user_belongs_to_empresa`
+- Permissões via `usePermissions()` para controlar ações de aprovação
+- Nenhuma alteração em tabelas existentes
 
