@@ -114,7 +114,7 @@ export function AppSidebar() {
           if (visibleItems.length === 0) return null;
 
           return (
-            <SidebarGroup key={group.modulo} defaultOpen>
+            <SidebarGroup key={group.modulo}>
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
