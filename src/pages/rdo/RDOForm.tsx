@@ -721,6 +721,11 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
           </Button>
         ) : (
           <div className="flex gap-2">
+            {isEditing && (
+              <Button variant="outline" size="sm" onClick={() => fetchAndGenerateRDOPdf(rdoId!)}>
+                <FileDown className="mr-1 h-4 w-4" /> PDF
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => saveMutation.mutate(false)} disabled={saveMutation.isPending}>
               Rascunho
             </Button>
