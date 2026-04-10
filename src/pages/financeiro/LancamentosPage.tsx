@@ -296,7 +296,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                           </Button>
                           {item.status === 'pendente' && (
                             <Button variant="ghost" size="icon" onClick={() => baixarMutation.mutate(item.id)} title="Baixar (marcar como pago)">
-                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <CheckCircle className="h-4 w-4 text-primary" />
                             </Button>
                           )}
                         </div>
