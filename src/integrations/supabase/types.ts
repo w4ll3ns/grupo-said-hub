@@ -14,16 +14,264 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      empresas: {
+        Row: {
+          ativa: boolean
+          cnpj: string | null
+          created_at: string
+          id: string
+          logo_url: string | null
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativa?: boolean
+          cnpj?: string | null
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativa?: boolean
+          cnpj?: string | null
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      perfil_permissoes: {
+        Row: {
+          aprovar: boolean
+          criar: boolean
+          editar: boolean
+          excluir: boolean
+          funcionalidade: string
+          id: string
+          modulo: string
+          perfil_id: string
+          visualizar: boolean
+        }
+        Insert: {
+          aprovar?: boolean
+          criar?: boolean
+          editar?: boolean
+          excluir?: boolean
+          funcionalidade: string
+          id?: string
+          modulo: string
+          perfil_id: string
+          visualizar?: boolean
+        }
+        Update: {
+          aprovar?: boolean
+          criar?: boolean
+          editar?: boolean
+          excluir?: boolean
+          funcionalidade?: string
+          id?: string
+          modulo?: string
+          perfil_id?: string
+          visualizar?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfil_permissoes_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      perfis: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          empresa_id: string | null
+          id: string
+          nome: string
+          sistema: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          empresa_id?: string | null
+          id?: string
+          nome: string
+          sistema?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          empresa_id?: string | null
+          id?: string
+          nome?: string
+          sistema?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfis_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          ativo: boolean
+          cargo: string | null
+          created_at: string
+          foto_url: string | null
+          id: string
+          matricula: string | null
+          nome: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          cargo?: string | null
+          created_at?: string
+          foto_url?: string | null
+          id: string
+          matricula?: string | null
+          nome?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          cargo?: string | null
+          created_at?: string
+          foto_url?: string | null
+          id?: string
+          matricula?: string | null
+          nome?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      usuario_empresas: {
+        Row: {
+          created_at: string
+          empresa_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usuario_empresas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usuario_obras: {
+        Row: {
+          created_at: string
+          id: string
+          obra_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          obra_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          obra_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      usuario_perfis: {
+        Row: {
+          created_at: string
+          id: string
+          perfil_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          perfil_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          perfil_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usuario_perfis_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_permission: {
+        Args: {
+          _acao: string
+          _funcionalidade: string
+          _modulo: string
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
+      user_belongs_to_empresa: {
+        Args: { _empresa_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "admin"
+        | "financeiro"
+        | "compras"
+        | "engenharia"
+        | "solicitante"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +398,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "financeiro", "compras", "engenharia", "solicitante"],
+    },
   },
 } as const
