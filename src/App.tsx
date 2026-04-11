@@ -42,6 +42,7 @@ import Empresas from "./pages/admin/Empresas";
 import Usuarios from "./pages/admin/Usuarios";
 import Perfis from "./pages/admin/Perfis";
 import Configuracoes from "./pages/admin/Configuracoes";
+import Tutoriais from "./pages/Tutoriais";
 
 const queryClient = new QueryClient();
 
@@ -102,6 +103,9 @@ const App = () => (
               <Route path="/admin/usuarios" element={<Usuarios />} />
               <Route path="/admin/perfis" element={<Perfis />} />
               <Route path="/admin/configuracoes" element={<Configuracoes />} />
+
+              {/* Tutoriais */}
+              <Route path="/tutoriais" element={<Tutoriais />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
