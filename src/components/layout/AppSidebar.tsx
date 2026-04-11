@@ -23,6 +23,7 @@ import {
   Settings,
   HardHat,
   ClipboardList,
+  BookOpen,
   TrendingUp,
   Receipt,
   Wallet,
@@ -141,6 +142,25 @@ export function AppSidebar() {
             </SidebarGroup>
           );
         })}
+        {/* Tutoriais — sempre visível */}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink
+                    to="/tutoriais"
+                    className="hover:bg-sidebar-accent/50"
+                    activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  >
+                    <BookOpen className="mr-2 h-4 w-4" />
+                    {!collapsed && <span>Tutoriais</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
     </Sidebar>
   );
