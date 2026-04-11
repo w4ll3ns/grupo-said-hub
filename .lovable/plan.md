@@ -1,47 +1,54 @@
 
 
-# Cadastro de Usuários pelo Administrador
+# Área de Tutoriais do Sistema
 
-## Resumo
-Criar uma edge function que usa a Admin API para criar usuários diretamente (sem confirmação de email), e adicionar um formulário na tela de Usuários para o admin cadastrar novos usuários com nome, email, senha, cargo, matrícula, perfil e empresas vinculadas.
+## O que será feito
+Criar uma seção "Tutoriais" no menu lateral, acessível a todos os usuários, com documentação passo-a-passo de todas as funcionalidades do sistema. O conteúdo será escrito com base no código real de cada página.
 
-## Fase 1 — Edge Function `create-user`
+## Estrutura
 
-Criar `supabase/functions/create-user/index.ts`:
-- Recebe: `email`, `password`, `nome`, `cargo`, `matricula`, `perfil_id`, `empresa_ids[]`
-- Usa `SUPABASE_SERVICE_ROLE_KEY` para chamar `supabase.auth.admin.createUser()` com `email_confirm: true` (auto-confirma)
-- Após criar o usuário, insere os vínculos em `usuario_perfis` e `usuario_empresas`
-- Valida que o chamador é admin (verifica JWT do request)
+### 1. Arquivo de dados `src/data/tutoriais.ts`
+Conteúdo centralizado com tutoriais organizados por módulo. Cada tutorial terá:
+- Titulo e descrição
+- Passos numerados explicando o fluxo completo
+- Dicas e observações relevantes
 
-## Fase 2 — UI no `Usuarios.tsx`
+Cobertura completa:
 
-- Substituir o botão "Convidar Usuário" desabilitado por "Novo Usuário" funcional
-- Dialog com campos: email, senha, nome, cargo, matrícula, perfil de acesso, empresas vinculadas
-- Chama a edge function via `supabase.functions.invoke('create-user', ...)`
-- Após sucesso, invalida queries e fecha dialog
+**Financeiro** (12 tutoriais): Dashboard, Lançamentos (abas Pagar/Receber), Contas a Pagar, Contas a Receber, Transferências, Fluxo de Caixa, DRE, Metas, Plano de Contas, Contas Bancárias, Formas de Pagamento, Centros de Custo
 
-## Fase 3 — Corrigir erros de build
+**RDO** (5 tutoriais): Dashboard, Relatórios Diários (criar, editar, gerar PDF), Obras, Funcionários, Equipamentos
 
-Corrigir os erros de TypeScript em 4 arquivos onde `Record<string, unknown>` não é aceito pelo tipo do Supabase:
-- `LancamentosPage.tsx`: tipar o payload explicitamente em vez de `Record<string, unknown>`
-- `RDOForm.tsx`: mesmo tratamento
-- `ContasBancarias.tsx`, `FormasPagamento.tsx`, `PlanoContas.tsx`: cast com `as any` nos inserts que misturam spread com `empresa_id`
+**Compras** (6 tutoriais): Dashboard, Solicitações (criar, aprovar/rejeitar, enviar), Cotações, Pedidos, Fornecedores, Catálogo
+
+**Administração** (4 tutoriais): Empresas, Usuários (criar, editar, vincular perfis/empresas, proteção contra auto-bloqueio), Perfis (permissões por módulo), Configurações
+
+**Acesso ao sistema** (3 tutoriais): Login, Recuperação de senha, Troca de empresa ativa
+
+### 2. Página `src/pages/Tutoriais.tsx`
+- Accordion por módulo com ícone e badge de quantidade
+- Cards dentro de cada módulo com título, descrição e passos
+- Campo de busca para filtrar tutoriais por texto
+- Usa componentes existentes: Accordion, Card, Badge, Input
+
+### 3. Menu lateral `AppSidebar.tsx`
+- Item fixo "Tutoriais" no final do sidebar (ícone BookOpen)
+- Sem controle de permissão — visível para todos
+
+### 4. Rota `App.tsx`
+- `/tutoriais` dentro das rotas protegidas
 
 ## Arquivos envolvidos
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/functions/create-user/index.ts` | Criar edge function |
-| `src/pages/admin/Usuarios.tsx` | Adicionar dialog de criação |
-| `src/pages/financeiro/LancamentosPage.tsx` | Corrigir tipo do payload |
-| `src/pages/financeiro/ContasBancarias.tsx` | Corrigir tipo do insert |
-| `src/pages/financeiro/FormasPagamento.tsx` | Corrigir tipo do insert |
-| `src/pages/financeiro/PlanoContas.tsx` | Corrigir tipo do insert |
-| `src/pages/rdo/RDOForm.tsx` | Corrigir tipo do payload |
+| `src/data/tutoriais.ts` | Criar — ~30 tutoriais com passo-a-passo |
+| `src/pages/Tutoriais.tsx` | Criar — página com busca + accordion |
+| `src/components/layout/AppSidebar.tsx` | Adicionar item fixo "Tutoriais" |
+| `src/App.tsx` | Adicionar rota `/tutoriais` |
 
 ## Detalhes técnicos
-- A edge function usa `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')` (já disponível como secret)
-- Verificação de admin: decodifica o JWT do header Authorization e chama `is_admin` via query
-- `email_confirm: true` no `createUser` pula a verificação de email
-- Senha definida pelo admin no momento do cadastro
+- Conteúdo 100% estático no frontend — sem banco de dados
+- Arquivo de dados separado para facilitar manutenção futura
+- Cada modificação de fluxo no sistema deverá atualizar o tutorial correspondente em `src/data/tutoriais.ts`
 
