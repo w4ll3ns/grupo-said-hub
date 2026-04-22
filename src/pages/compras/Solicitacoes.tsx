@@ -104,7 +104,7 @@ export default function Solicitacoes() {
 
   const { data: profiles = [] } = useQuery({
     queryKey: ['profiles_map'],
-    queryFn: async () => { const { data } = await supabase.from('profiles').select('id, nome'); return data || []; },
+    queryFn: async () => { const { data } = await supabase.from('vw_profiles_visiveis').select('id, nome'); return data || []; },
   });
 
   const saveMutation = useMutation({
