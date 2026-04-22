@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useEmpresa } from '@/hooks/useEmpresa';
@@ -20,8 +20,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2, Paperclip, FileText, X } from 'lucide-react';
 import { toast } from 'sonner';
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const schema = z.object({
   descricao: z.string().min(1, 'Descrição é obrigatória'),
@@ -52,6 +54,7 @@ type Lancamento = {
   plano_receita_id: string | null;
   plano_despesa_id: string | null;
   observacoes: string | null;
+  nota_fiscal_url: string | null;
 };
 
 const formatBRL = (v: number) =>
@@ -83,6 +86,8 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [deleteTarget, setDeleteTarget] = useState<Lancamento | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const planoTable = tipo === 'receber' ? 'plano_receitas' : 'plano_despesas';
   const planoFk = tipo === 'receber' ? 'plano_receita_id' : 'plano_despesa_id';
@@ -105,7 +110,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
         .eq('tipo', tipo)
         .order('data_vencimento', { ascending: false });
       if (error) throw error;
-      return data as Lancamento[];
+      return data as unknown as Lancamento[];
     },
     enabled: !!empresaAtiva,
   });
@@ -150,6 +155,16 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
     enabled: !!empresaAtiva,
   });
 
+  const uploadNotaFiscal = async (lancamentoId: string, file: File): Promise<string> => {
+    const filePath = `${empresaAtiva!.id}/${lancamentoId}.pdf`;
+    const { error } = await supabase.storage
+      .from('notas-fiscais')
+      .upload(filePath, file, { upsert: true, contentType: 'application/pdf' });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from('notas-fiscais').getPublicUrl(filePath);
+    return urlData.publicUrl;
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (values: FormData) => {
       const payload = {
@@ -163,12 +178,23 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
         observacoes: values.observacoes || null,
         [planoFk]: values.plano_id || null,
       } as any;
+
+      let lancamentoId: string;
+
       if (editing) {
         const { error } = await supabase.from('lancamentos').update(payload).eq('id', editing.id);
         if (error) throw error;
+        lancamentoId = editing.id;
       } else {
-        const { error } = await supabase.from('lancamentos').insert({ ...payload, tipo, empresa_id: empresaAtiva!.id } as any);
+        const { data, error } = await supabase.from('lancamentos').insert({ ...payload, tipo, empresa_id: empresaAtiva!.id } as any).select('id').single();
         if (error) throw error;
+        lancamentoId = data.id;
+      }
+
+      // Upload nota fiscal if file selected
+      if (selectedFile) {
+        const notaUrl = await uploadNotaFiscal(lancamentoId, selectedFile);
+        await supabase.from('lancamentos').update({ nota_fiscal_url: notaUrl } as any).eq('id', lancamentoId);
       }
     },
     onSuccess: () => {
@@ -210,6 +236,8 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
   const handleClose = () => {
     setOpen(false);
     setEditing(null);
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     form.reset({
       descricao: '', valor: 0, data_emissao: new Date(), data_vencimento: new Date(),
       conta_bancaria_id: '', forma_pagamento_id: '', centro_custo_id: '', plano_id: '', observacoes: '',
@@ -218,6 +246,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
 
   const handleEdit = (item: Lancamento) => {
     setEditing(item);
+    setSelectedFile(null);
     form.reset({
       descricao: item.descricao,
       valor: item.valor,
@@ -230,6 +259,22 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
       observacoes: item.observacoes || '',
     });
     setOpen(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error('Apenas arquivos PDF são aceitos');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error('O arquivo deve ter no máximo 5 MB');
+      e.target.value = '';
+      return;
+    }
+    setSelectedFile(file);
   };
 
   const filtered = items
@@ -288,13 +333,14 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                 <TableHead>Categoria</TableHead>
                 <TableHead>Conta</TableHead>
                 <TableHead>Centro Custo</TableHead>
+                <TableHead>NF</TableHead>
                 <TableHead className="w-[120px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                     Nenhum lançamento encontrado
                   </TableCell>
                 </TableRow>
@@ -332,6 +378,20 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {ccNome || '—'}
+                      </TableCell>
+                      <TableCell>
+                        {item.nota_fiscal_url ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <a href={item.nota_fiscal_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
+                                <Paperclip className="h-4 w-4" />
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent>Ver Nota Fiscal</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
@@ -380,7 +440,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
 
       {/* Create/Edit dialog */}
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar' : 'Novo'} Lançamento</DialogTitle>
             <DialogDescription>
@@ -522,6 +582,42 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                   <FormMessage />
                 </FormItem>
               )} />
+
+              {/* Nota Fiscal Upload */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Nota Fiscal (PDF, máx. 5 MB)</label>
+                {editing?.nota_fiscal_url && !selectedFile && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <a href={editing.nota_fiscal_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                      Ver nota fiscal atual
+                    </a>
+                  </div>
+                )}
+                {selectedFile ? (
+                  <div className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="flex-1 truncate">{selectedFile.name}</span>
+                    <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <Paperclip className="mr-2 h-4 w-4" />
+                      {editing?.nota_fiscal_url ? 'Substituir PDF' : 'Anexar PDF'}
+                    </Button>
+                  </div>
+                )}
+              </div>
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
