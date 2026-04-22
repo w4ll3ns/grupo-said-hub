@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useEmpresa } from '@/hooks/useEmpresa';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -18,7 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Plus, Pencil, Trash2, CalendarIcon, ArrowRightLeft } from 'lucide-react';
+import { Plus, CalendarIcon, ArrowRightLeft, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const schema = z.object({
@@ -42,6 +43,9 @@ type Transferencia = {
   valor: number;
   data: string;
   descricao: string | null;
+  tipo: string;
+  transferencia_original_id: string | null;
+  created_by: string | null;
   created_at: string;
 };
 
@@ -55,10 +59,10 @@ const formatDate = (d: string) => {
 
 export default function Transferencias() {
   const { empresaAtiva } = useEmpresa();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Transferencia | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Transferencia | null>(null);
+  const [estornoTarget, setEstornoTarget] = useState<Transferencia | null>(null);
+  const [estornoMotivo, setEstornoMotivo] = useState('');
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -84,65 +88,64 @@ export default function Transferencias() {
         .eq('empresa_id', empresaAtiva!.id)
         .order('data', { ascending: false });
       if (error) throw error;
-      return data as Transferencia[];
+      return (data || []) as Transferencia[];
     },
     enabled: !!empresaAtiva,
   });
 
+  // Set de IDs que já foram estornados
+  const idsEstornados = new Set(
+    items
+      .filter((t) => t.transferencia_original_id)
+      .map((t) => t.transferencia_original_id as string)
+  );
+
   const saveMutation = useMutation({
     mutationFn: async (values: FormData) => {
-      const payload = {
-        conta_origem_id: values.conta_origem_id,
-        conta_destino_id: values.conta_destino_id,
-        valor: values.valor,
-        data: format(values.data, 'yyyy-MM-dd'),
-        descricao: values.descricao || null,
-      };
-      if (editing) {
-        const { error } = await supabase.from('transferencias').update(payload).eq('id', editing.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('transferencias').insert({ ...payload, empresa_id: empresaAtiva!.id });
-        if (error) throw error;
-      }
+      const { data, error } = await supabase.rpc('criar_transferencia', {
+        _empresa_id: empresaAtiva!.id,
+        _conta_origem_id: values.conta_origem_id,
+        _conta_destino_id: values.conta_destino_id,
+        _valor: values.valor,
+        _data: format(values.data, 'yyyy-MM-dd'),
+        _descricao: values.descricao || null,
+      });
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
-      toast.success(editing ? 'Transferência atualizada' : 'Transferência registrada');
+      qc.invalidateQueries({ queryKey: ['transferencias'] });
+      qc.invalidateQueries({ queryKey: ['lancamentos'] });
+      qc.invalidateQueries({ queryKey: ['vw_saldo_conta_atual'] });
+      toast.success('Transferência realizada');
       handleClose();
     },
-    onError: () => toast.error('Erro ao salvar transferência'),
+    onError: (err: any) => toast.error(err.message ?? 'Erro ao criar transferência'),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('transferencias').delete().eq('id', id);
+  const estornarMutation = useMutation({
+    mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
+      const { data, error } = await supabase.rpc('estornar_transferencia', {
+        _transferencia_id: id,
+        _motivo: motivo || null,
+      });
       if (error) throw error;
+      return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transferencias'] });
-      toast.success('Transferência excluída');
-      setDeleteTarget(null);
+      qc.invalidateQueries({ queryKey: ['transferencias'] });
+      qc.invalidateQueries({ queryKey: ['lancamentos'] });
+      qc.invalidateQueries({ queryKey: ['vw_saldo_conta_atual'] });
+      toast.success('Transferência estornada');
+      setEstornoTarget(null);
+      setEstornoMotivo('');
     },
-    onError: () => toast.error('Erro ao excluir'),
+    onError: (err: any) => toast.error(err.message ?? 'Erro ao estornar'),
   });
 
   const handleClose = () => {
     setOpen(false);
-    setEditing(null);
     form.reset({ conta_origem_id: '', conta_destino_id: '', valor: 0, data: new Date(), descricao: '' });
-  };
-
-  const handleEdit = (item: Transferencia) => {
-    setEditing(item);
-    form.reset({
-      conta_origem_id: item.conta_origem_id,
-      conta_destino_id: item.conta_destino_id,
-      valor: item.valor,
-      data: new Date(item.data + 'T00:00:00'),
-      descricao: item.descricao || '',
-    });
-    setOpen(true);
   };
 
   const getContaNome = (id: string) => contas.find((c) => c.id === id)?.nome || '—';
@@ -174,61 +177,86 @@ export default function Transferencias() {
                 <TableHead className="w-[40px] text-center">→</TableHead>
                 <TableHead>Destino</TableHead>
                 <TableHead>Valor</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+                <TableHead className="w-[80px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Nenhuma transferência registrada
                   </TableCell>
                 </TableRow>
               ) : (
-                items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{formatDate(item.data)}</TableCell>
-                    <TableCell className="font-medium">{getContaNome(item.conta_origem_id)}</TableCell>
-                    <TableCell className="text-center"><ArrowRightLeft className="h-4 w-4 text-muted-foreground mx-auto" /></TableCell>
-                    <TableCell className="font-medium">{getContaNome(item.conta_destino_id)}</TableCell>
-                    <TableCell>{formatBRL(item.valor)}</TableCell>
-                    <TableCell className="text-muted-foreground max-w-[200px] truncate">{item.descricao || '—'}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} title="Editar">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(item)} title="Excluir">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                items.map((item) => {
+                  const podeEstornar = item.tipo === 'normal' && !idsEstornados.has(item.id);
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>{formatDate(item.data)}</TableCell>
+                      <TableCell className="font-medium">{getContaNome(item.conta_origem_id)}</TableCell>
+                      <TableCell className="text-center"><ArrowRightLeft className="h-4 w-4 text-muted-foreground mx-auto" /></TableCell>
+                      <TableCell className="font-medium">{getContaNome(item.conta_destino_id)}</TableCell>
+                      <TableCell>{formatBRL(item.valor)}</TableCell>
+                      <TableCell>
+                        <Badge variant={item.tipo === 'estorno' ? 'destructive' : 'default'}>
+                          {item.tipo === 'estorno' ? 'Estorno' : idsEstornados.has(item.id) ? 'Estornada' : 'Normal'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground max-w-[200px] truncate">{item.descricao || '—'}</TableCell>
+                      <TableCell>
+                        {podeEstornar && (
+                          <Button variant="ghost" size="icon" onClick={() => setEstornoTarget(item)} title="Estornar">
+                            <Undo2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
       )}
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+      {/* Dialog de estorno */}
+      <AlertDialog open={!!estornoTarget} onOpenChange={(v) => { if (!v) { setEstornoTarget(null); setEstornoMotivo(''); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir transferência</AlertDialogTitle>
-            <AlertDialogDescription>Tem certeza? Esta ação não pode ser desfeita.</AlertDialogDescription>
+            <AlertDialogTitle>Estornar transferência</AlertDialogTitle>
+            <AlertDialogDescription>
+              Será criada uma transferência inversa de {estornoTarget ? formatBRL(estornoTarget.valor) : ''} para desfazer esta operação. Os lançamentos originais são preservados.
+            </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="py-2">
+            <label className="text-sm font-medium">Motivo (opcional)</label>
+            <Textarea
+              placeholder="Informe o motivo do estorno..."
+              value={estornoMotivo}
+              onChange={(e) => setEstornoMotivo(e.target.value)}
+              className="mt-1"
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Excluir</AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => estornoTarget && estornarMutation.mutate({ id: estornoTarget.id, motivo: estornoMotivo })}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={estornarMutation.isPending}
+            >
+              {estornarMutation.isPending ? 'Estornando...' : 'Confirmar Estorno'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Dialog de nova transferência */}
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? 'Editar' : 'Nova'} Transferência</DialogTitle>
+            <DialogTitle>Nova Transferência</DialogTitle>
             <DialogDescription>Preencha os dados da transferência entre contas.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -295,7 +323,7 @@ export default function Transferencias() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
                 <Button type="submit" disabled={saveMutation.isPending}>
-                  {saveMutation.isPending ? 'Salvando...' : 'Salvar'}
+                  {saveMutation.isPending ? 'Transferindo...' : 'Transferir'}
                 </Button>
               </DialogFooter>
             </form>
