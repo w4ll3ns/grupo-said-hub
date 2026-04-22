@@ -225,7 +225,7 @@ export default function Solicitacoes() {
                         )}
                         {s.status === 'pendente' && canApproveCompras && s.solicitante_id !== user?.id && (
                           <>
-                            <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'aprovada', extras: { aprovado_por: user?.id, aprovado_em: new Date().toISOString() } })} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
+                            <Button variant="ghost" size="icon" <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'aprovada' })} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button> title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
                             <Button variant="ghost" size="icon" onClick={() => setRejectDialog(s.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
                           </>
                         )}
@@ -284,7 +284,7 @@ export default function Solicitacoes() {
           <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Motivo da rejeição..." />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setRejectDialog(null); setRejectReason(''); }}>Cancelar</Button>
-            <Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason, aprovado_por: user?.id, aprovado_em: new Date().toISOString() } })}>Rejeitar</Button>
+            <Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', <Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason } })}>Rejeitar</Button> })}>Rejeitar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
