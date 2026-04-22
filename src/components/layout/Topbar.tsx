@@ -1,12 +1,12 @@
 import { useAuth } from '@/hooks/useAuth';
 import { useEmpresa } from '@/hooks/useEmpresa';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -17,25 +17,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { Bell, LogOut, Moon, Sun, User } from 'lucide-react';
+import { Bell, LogOut, Moon, Sun } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 
 export function Topbar() {
   const { user, signOut } = useAuth();
   const { empresas, empresaAtiva, setEmpresaAtiva } = useEmpresa();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
+  const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    const isDark = document.documentElement.classList.contains('dark');
-    setDark(isDark);
-  }, []);
-
-  const toggleTheme = () => {
-    document.documentElement.classList.toggle('dark');
-    setDark(!dark);
-  };
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   const handleLogout = async () => {
     await signOut();
@@ -75,7 +66,7 @@ export function Topbar() {
 
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-9 w-9">
-          {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
         <Button variant="ghost" size="icon" className="h-9 w-9 relative">
           <Bell className="h-4 w-4" />
@@ -91,10 +82,6 @@ export function Topbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => navigate('/perfil')}>
-              <User className="mr-2 h-4 w-4" /> Meu Perfil
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive">
               <LogOut className="mr-2 h-4 w-4" /> Sair
             </DropdownMenuItem>
