@@ -14,6 +14,26 @@ import { Sun, Cloud, CloudRain, CloudLightning, Plus, Trash2, ChevronLeft, Chevr
 import { fetchAndGenerateRDOPdf } from '@/utils/fetchAndGenerateRDOPdf';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useSignedUrl } from '@/hooks/useSignedUrl';
+import { Skeleton } from '@/components/ui/skeleton';
+
+function RdoFotoPreview({ path, alt }: { path: string; alt: string }) {
+  if (path.startsWith('blob:') || path.startsWith('http')) {
+    return <img src={path} alt={alt} className="w-full h-32 object-cover" />;
+  }
+  return <RdoFotoPreviewSigned path={path} alt={alt} />;
+}
+
+function RdoFotoPreviewSigned({ path, alt }: { path: string; alt: string }) {
+  const { url, isLoading } = useSignedUrl('rdo-fotos', path);
+  if (isLoading) {
+    return <Skeleton className="w-full h-32" />;
+  }
+  if (!url) {
+    return <div className="w-full h-32 flex items-center justify-center bg-muted text-muted-foreground text-xs">Erro ao carregar</div>;
+  }
+  return <img src={url} alt={alt} className="w-full h-32 object-cover" />;
+}
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -235,8 +255,7 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
         const path = `${empresaAtiva!.id}/${rdoIdToUse}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
         const { error } = await supabase.storage.from('rdo-fotos').upload(path, foto.file);
         if (error) { console.error(error); continue; }
-        const { data: urlData } = supabase.storage.from('rdo-fotos').getPublicUrl(path);
-        uploaded.push({ url: urlData.publicUrl, legenda: foto.legenda });
+        uploaded.push({ url: path, legenda: foto.legenda }); // guardamos apenas o path
       } else if (foto.url && !foto.url.startsWith('blob:')) {
         uploaded.push({ url: foto.url, legenda: foto.legenda });
       }
@@ -653,7 +672,7 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
               <div className="grid grid-cols-2 gap-3">
                 {fotos.map((foto, idx) => (
                   <div key={idx} className="relative rounded-lg border overflow-hidden">
-                    <img src={foto.url} alt={foto.legenda || 'Foto RDO'} className="w-full h-32 object-cover" />
+                    <RdoFotoPreview path={foto.url} alt={foto.legenda || 'Foto RDO'} />
                     <button type="button" onClick={() => setFotos(fotos.filter((_, i) => i !== idx))}
                       className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1">
                       <X className="h-3 w-3" />

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { generateRDOPdf, RDOPdfData } from '@/utils/generateRDOPdf';
+import { getSignedUrl } from '@/lib/storage';
 import { toast } from 'sonner';
 
 export async function fetchAndGenerateRDOPdf(rdoId: string) {
@@ -72,7 +73,14 @@ export async function fetchAndGenerateRDOPdf(rdoId: string) {
         unidade: a.unidade,
         status: a.status,
       })),
-      fotos: (fotosRes.data || []).map((f: any) => ({ url: f.url, legenda: f.legenda })),
+      fotos: await Promise.all(
+        (fotosRes.data || []).map(async (f: any) => {
+          const url = (f.url && !f.url.startsWith('http'))
+            ? await getSignedUrl('rdo-fotos', f.url, 3600)
+            : f.url;
+          return { url: url || '', legenda: f.legenda };
+        })
+      ),
       aprovacoes: (aprovRes.data || []).map((a: any) => ({
         tipo: a.tipo,
         nome: a.nome,

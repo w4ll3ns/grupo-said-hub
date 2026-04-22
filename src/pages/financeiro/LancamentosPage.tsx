@@ -22,6 +22,31 @@ import { Calendar } from '@/components/ui/calendar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2, Paperclip, FileText, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { getSignedUrl } from '@/lib/storage';
+
+function NotaFiscalLink({ path }: { path: string | null }) {
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!path) return;
+    const url = await getSignedUrl('notas-fiscais', path);
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+      toast.error('Não foi possível abrir a nota fiscal');
+    }
+  };
+  if (!path) return <span className="text-muted-foreground">—</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button onClick={handleClick} className="text-primary hover:text-primary/80">
+          <Paperclip className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>Ver Nota Fiscal</TooltipContent>
+    </Tooltip>
+  );
+}
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -161,8 +186,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
       .from('notas-fiscais')
       .upload(filePath, file, { upsert: true, contentType: 'application/pdf' });
     if (error) throw error;
-    const { data: urlData } = supabase.storage.from('notas-fiscais').getPublicUrl(filePath);
-    return urlData.publicUrl;
+    return filePath; // guardamos apenas o path, signed URL é gerada sob demanda
   };
 
   const saveMutation = useMutation({
@@ -380,18 +404,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                         {ccNome || '—'}
                       </TableCell>
                       <TableCell>
-                        {item.nota_fiscal_url ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <a href={item.nota_fiscal_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-                                <Paperclip className="h-4 w-4" />
-                              </a>
-                            </TooltipTrigger>
-                            <TooltipContent>Ver Nota Fiscal</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        <NotaFiscalLink path={item.nota_fiscal_url} />
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
