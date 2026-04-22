@@ -1,56 +1,63 @@
 
 
-# Etapa 3: RLS granular com has_permission() + 3 fixes pendentes
+# Etapa 4: Storage buckets privados com signed URLs
 
 ## Resumo
-Duas partes: (A) 3 correções de código no frontend, (B) uma migration SQL que substitui todas as policies genéricas "Users manage own empresa ..." por policies granulares com `has_permission()`.
+Tornar os buckets `rdo-fotos` e `notas-fiscais` privados, converter URLs existentes em paths relativos, criar RLS de storage por empresa, e atualizar o frontend para usar signed URLs sob demanda. O bucket `empresa-logos` permanece publico.
 
-## Parte A — 3 fixes de código
+## Alteracoes
 
-### Fix 1. Validação de env vars no client.ts
-**`src/integrations/supabase/client.ts`** — Adicionar validação `if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) throw ...` antes do `createClient`.
+### 1. Migration SQL
+**Arquivo novo:** `supabase/migrations/20260422..._sprint0_private_storage.sql`
 
-**`src/lib/supabase.ts`** — Simplificar para apenas `export { supabase } from '@/integrations/supabase/client';` (remover validação duplicada).
+Conteudo exato fornecido no prompt:
+- **A.** UPDATE em `lancamentos.nota_fiscal_url` e `rdo_fotos.url` para extrair apenas o path relativo (regexp_replace)
+- **B.** `UPDATE storage.buckets SET public = false` para `rdo-fotos` e `notas-fiscais`
+- **C.** DROP das policies publicas antigas + CREATE de 3 policies para `rdo-fotos` (SELECT, INSERT, DELETE) com isolamento por empresa via `storage.foldername(name)[1]`
+- **D.** DROP das policies antigas + CREATE de 4 policies para `notas-fiscais` (SELECT, INSERT, UPDATE, DELETE) com isolamento por empresa
 
-**Nota:** O sistema instrui a nunca editar `client.ts`. Neste caso o usuário pediu explicitamente essa alteração como fix de segurança, e o conteúdo continua compatível com a auto-geração. Será aplicado conforme solicitado.
+### 2. Helper de storage
+**Arquivo novo:** `src/lib/storage.ts`
 
-### Fix 2. Usar vw_profiles_visiveis em Solicitações
-**`src/pages/compras/Solicitacoes.tsx`** linha 107 — Trocar `supabase.from('profiles')` por `supabase.from('vw_profiles_visiveis')`.
+Funcoes `getSignedUrl(bucket, path, expiresInSeconds)` e `getPublicUrl(bucket, path)` conforme prompt.
 
-### Fix 3. ThemeProvider seguir o SO
-**`src/App.tsx`** linha 68 — Alterar de `defaultTheme="light" enableSystem={false}` para `defaultTheme="system" enableSystem`.
+### 3. Hook useSignedUrl
+**Arquivo novo:** `src/hooks/useSignedUrl.ts`
 
-## Parte B — Migration SQL de RLS granular
+Hook reativo que resolve path em signed URL, com cleanup e loading state.
 
-**Arquivo novo:** `supabase/migrations/20260422..._sprint0_rls_granular.sql`
+### 4. LancamentosPage.tsx (2 mudancas)
+**Arquivo:** `src/pages/financeiro/LancamentosPage.tsx`
 
-Conteúdo exato fornecido no prompt. Resume-se a:
+- **Linha 158-166:** `uploadNotaFiscal` retorna `filePath` em vez de `publicUrl`
+- **Linha 382-395:** Substituir `<a href={item.nota_fiscal_url}>` pelo componente `NotaFiscalLink` que gera signed URL on-click. Adicionar import de `getSignedUrl` e o componente inline.
 
-- **DROP** de todas as policies "Users manage own empresa ..." nas 24 tabelas de negócio
-- **CREATE** de 4 policies por tabela (SELECT/INSERT/UPDATE/DELETE) que chamam `has_permission(auth.uid(), modulo, funcionalidade, acao)`
-- As policies "Admins manage ..." permanecem intocadas
-- Regras especiais:
-  - **lancamentos**: aceita permissão em `lancamentos`, `contas_pagar` ou `contas_receber` conforme `tipo`
-  - **solicitacoes_compra UPDATE**: OR entre `editar`, `aprovar`, e criador movendo rascunho
-  - **rdos DELETE**: só em `status = 'rascunho'`
-  - **solicitacoes_compra DELETE**: só em `status = 'rascunho'`
-  - **rdo_aprovacoes**: requer permissão `aprovar`
-  - **Tabelas filhas** (rdo_funcionarios, cotacao_itens, etc.): via EXISTS na tabela pai
+### 5. RDOForm.tsx (2 mudancas)
+**Arquivo:** `src/pages/rdo/RDOForm.tsx`
+
+- **Linha 230-244:** `uploadPhotos` retorna `path` em vez de `publicUrl`
+- **Linha 656:** Substituir `<img src={foto.url}>` pelo componente `RdoFotoPreview` que detecta blob/http (usa direto) vs path relativo (usa `useSignedUrl`). Adicionar imports e componentes inline.
+
+### 6. fetchAndGenerateRDOPdf.ts
+**Arquivo:** `src/utils/fetchAndGenerateRDOPdf.ts`
+
+- **Linha 75:** Substituir o `.map` sincrono por `Promise.all` assincrono que converte paths relativos em signed URLs (1h de validade) antes de passar ao `generateRDOPdf`.
 
 ## Arquivos envolvidos
 
-| Arquivo | Ação |
+| Arquivo | Acao |
 |---------|------|
-| `src/integrations/supabase/client.ts` | Adicionar validação de env vars |
-| `src/lib/supabase.ts` | Simplificar (remover validação duplicada) |
-| `src/pages/compras/Solicitacoes.tsx` | Trocar `profiles` por `vw_profiles_visiveis` |
-| `src/App.tsx` | ThemeProvider: `defaultTheme="system" enableSystem` |
-| `supabase/migrations/...rls_granular.sql` | Criar — migration completa com ~150 linhas de policies |
+| `supabase/migrations/...private_storage.sql` | Criar — migration completa |
+| `src/lib/storage.ts` | Criar — helper getSignedUrl/getPublicUrl |
+| `src/hooks/useSignedUrl.ts` | Criar — hook reativo |
+| `src/pages/financeiro/LancamentosPage.tsx` | Upload retorna path + NotaFiscalLink component |
+| `src/pages/rdo/RDOForm.tsx` | Upload retorna path + RdoFotoPreview component |
+| `src/utils/fetchAndGenerateRDOPdf.ts` | Signed URLs para fotos no PDF |
 
-## Detalhes técnicos
-- A migration não cria tabelas nem colunas, apenas troca policies
-- `has_permission()` já existe no banco (criada em etapa anterior)
-- `user_belongs_to_empresa()` já existe e continua sendo chamada em conjunto
-- `is_admin()` bypass continua via policies "Admins manage ..." separadas
-- Tipos TypeScript não precisam ser regenerados (nenhuma tabela/view nova)
+## Detalhes tecnicos
+- Migration e frontend devem sair no mesmo commit para evitar quebra atomica
+- `empresa-logos` permanece publico — nao e tocado
+- Signed URLs expiram em 10 min (default) para visualizacao e 1h para geracao de PDF
+- Fallback defensivo para URLs `http*` antigas no PDF (caso regexp nao tenha pego algum registro)
+- Nenhuma tabela nova criada, apenas policies de `storage.objects` e UPDATE de dados existentes
 
