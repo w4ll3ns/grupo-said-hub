@@ -459,6 +459,7 @@ export type Database = {
           plano_receita_id: string | null
           status: string
           tipo: string
+          transferencia_id: string | null
           updated_at: string
           valor: number
         }
@@ -479,6 +480,7 @@ export type Database = {
           plano_receita_id?: string | null
           status?: string
           tipo: string
+          transferencia_id?: string | null
           updated_at?: string
           valor: number
         }
@@ -499,6 +501,7 @@ export type Database = {
           plano_receita_id?: string | null
           status?: string
           tipo?: string
+          transferencia_id?: string | null
           updated_at?: string
           valor?: number
         }
@@ -516,6 +519,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contas_bancarias"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_conta_bancaria_id_fkey"
+            columns: ["conta_bancaria_id"]
+            isOneToOne: false
+            referencedRelation: "vw_saldo_conta_atual"
+            referencedColumns: ["conta_id"]
           },
           {
             foreignKeyName: "lancamentos_empresa_id_fkey"
@@ -543,6 +553,13 @@ export type Database = {
             columns: ["plano_receita_id"]
             isOneToOne: false
             referencedRelation: "plano_receitas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_transferencia_id_fkey"
+            columns: ["transferencia_id"]
+            isOneToOne: false
+            referencedRelation: "transferencias"
             referencedColumns: ["id"]
           },
         ]
@@ -1378,10 +1395,13 @@ export type Database = {
           conta_destino_id: string
           conta_origem_id: string
           created_at: string
+          created_by: string | null
           data: string
           descricao: string | null
           empresa_id: string
           id: string
+          tipo: string
+          transferencia_original_id: string | null
           updated_at: string
           valor: number
         }
@@ -1389,10 +1409,13 @@ export type Database = {
           conta_destino_id: string
           conta_origem_id: string
           created_at?: string
+          created_by?: string | null
           data?: string
           descricao?: string | null
           empresa_id: string
           id?: string
+          tipo?: string
+          transferencia_original_id?: string | null
           updated_at?: string
           valor: number
         }
@@ -1400,10 +1423,13 @@ export type Database = {
           conta_destino_id?: string
           conta_origem_id?: string
           created_at?: string
+          created_by?: string | null
           data?: string
           descricao?: string | null
           empresa_id?: string
           id?: string
+          tipo?: string
+          transferencia_original_id?: string | null
           updated_at?: string
           valor?: number
         }
@@ -1416,6 +1442,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "transferencias_conta_destino_id_fkey"
+            columns: ["conta_destino_id"]
+            isOneToOne: false
+            referencedRelation: "vw_saldo_conta_atual"
+            referencedColumns: ["conta_id"]
+          },
+          {
             foreignKeyName: "transferencias_conta_origem_id_fkey"
             columns: ["conta_origem_id"]
             isOneToOne: false
@@ -1423,10 +1456,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "transferencias_conta_origem_id_fkey"
+            columns: ["conta_origem_id"]
+            isOneToOne: false
+            referencedRelation: "vw_saldo_conta_atual"
+            referencedColumns: ["conta_id"]
+          },
+          {
             foreignKeyName: "transferencias_empresa_id_fkey"
             columns: ["empresa_id"]
             isOneToOne: false
             referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transferencias_transferencia_original_id_fkey"
+            columns: ["transferencia_original_id"]
+            isOneToOne: false
+            referencedRelation: "transferencias"
             referencedColumns: ["id"]
           },
         ]
@@ -1530,8 +1577,58 @@ export type Database = {
         }
         Relationships: []
       }
+      vw_saldo_conta_atual: {
+        Row: {
+          conta_id: string | null
+          empresa_id: string | null
+          nome: string | null
+          saldo_efetivo: number | null
+          saldo_inicial: number | null
+          saldo_previsto: number | null
+        }
+        Insert: {
+          conta_id?: string | null
+          empresa_id?: string | null
+          nome?: string | null
+          saldo_efetivo?: never
+          saldo_inicial?: number | null
+          saldo_previsto?: never
+        }
+        Update: {
+          conta_id?: string | null
+          empresa_id?: string | null
+          nome?: string | null
+          saldo_efetivo?: never
+          saldo_inicial?: number | null
+          saldo_previsto?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contas_bancarias_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      criar_transferencia: {
+        Args: {
+          _conta_destino_id: string
+          _conta_origem_id: string
+          _data: string
+          _descricao?: string
+          _empresa_id: string
+          _valor: number
+        }
+        Returns: string
+      }
+      estornar_transferencia: {
+        Args: { _motivo?: string; _transferencia_id: string }
+        Returns: string
+      }
       has_permission: {
         Args: {
           _acao: string

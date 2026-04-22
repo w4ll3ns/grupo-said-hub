@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useEmpresa } from '@/hooks/useEmpresa';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Plus, Pencil, Search, Landmark } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -37,6 +38,15 @@ type ContaBancaria = {
   ativa: boolean;
 };
 
+type SaldoConta = {
+  conta_id: string;
+  empresa_id: string;
+  nome: string;
+  saldo_inicial: number;
+  saldo_efetivo: number;
+  saldo_previsto: number;
+};
+
 const tipos = [
   { value: 'corrente', label: 'Conta Corrente' },
   { value: 'poupanca', label: 'Poupança' },
@@ -44,7 +54,7 @@ const tipos = [
 ];
 
 const formatBRL = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
 
 export default function ContasBancarias() {
   const { empresaAtiva } = useEmpresa();
@@ -72,6 +82,22 @@ export default function ContasBancarias() {
     enabled: !!empresaAtiva,
   });
 
+  const { data: saldos = [] } = useQuery({
+    queryKey: ['vw_saldo_conta_atual', empresaAtiva?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vw_saldo_conta_atual')
+        .select('*')
+        .eq('empresa_id', empresaAtiva!.id);
+      if (error) throw error;
+      return (data || []) as SaldoConta[];
+    },
+    enabled: !!empresaAtiva,
+    staleTime: 30_000,
+  });
+
+  const saldoDa = (contaId: string) => saldos.find((s) => s.conta_id === contaId);
+
   const saveMutation = useMutation({
     mutationFn: async (values: FormData) => {
       const payload = { ...values, banco: values.banco || null, agencia: values.agencia || null, conta: values.conta || null };
@@ -85,6 +111,7 @@ export default function ContasBancarias() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contas_bancarias'] });
+      queryClient.invalidateQueries({ queryKey: ['vw_saldo_conta_atual'] });
       toast.success(editing ? 'Conta atualizada' : 'Conta criada');
       handleClose();
     },
@@ -96,7 +123,10 @@ export default function ContasBancarias() {
       const { error } = await supabase.from('contas_bancarias').update({ ativa: !item.ativa }).eq('id', item.id);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['contas_bancarias'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contas_bancarias'] });
+      queryClient.invalidateQueries({ queryKey: ['vw_saldo_conta_atual'] });
+    },
     onError: () => toast.error('Erro ao alterar status'),
   });
 
@@ -126,152 +156,175 @@ export default function ContasBancarias() {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Contas Bancárias</h1>
-          <p className="text-muted-foreground">Gerencie as contas bancárias da empresa</p>
+    <TooltipProvider>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Contas Bancárias</h1>
+            <p className="text-muted-foreground">Gerencie as contas bancárias da empresa</p>
+          </div>
         </div>
-      </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Nova Conta
+          </Button>
         </div>
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Nova Conta
-        </Button>
-      </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        </div>
-      ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Banco</TableHead>
-                <TableHead>Ag/Conta</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Saldo Inicial</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[80px]">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          </div>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    Nenhuma conta encontrada
-                  </TableCell>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Banco</TableHead>
+                  <TableHead>Ag/Conta</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Saldo Inicial</TableHead>
+                  <TableHead>
+                    <Tooltip>
+                      <TooltipTrigger className="cursor-help underline decoration-dotted">Saldo Efetivo</TooltipTrigger>
+                      <TooltipContent>Apenas lançamentos pagos</TooltipContent>
+                    </Tooltip>
+                  </TableHead>
+                  <TableHead>
+                    <Tooltip>
+                      <TooltipTrigger className="cursor-help underline decoration-dotted">Saldo Previsto</TooltipTrigger>
+                      <TooltipContent>Pagos + pendentes</TooltipContent>
+                    </Tooltip>
+                  </TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-[80px]">Ações</TableHead>
                 </TableRow>
-              ) : (
-                filtered.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <Landmark className="h-4 w-4 text-muted-foreground" />
-                        {item.nome}
-                      </div>
-                    </TableCell>
-                    <TableCell>{item.banco || '—'}</TableCell>
-                    <TableCell>{item.agencia && item.conta ? `${item.agencia} / ${item.conta}` : '—'}</TableCell>
-                    <TableCell>{tipos.find((t) => t.value === item.tipo)?.label || item.tipo}</TableCell>
-                    <TableCell>{formatBRL(item.saldo_inicial)}</TableCell>
-                    <TableCell>
-                      <Badge variant={item.ativa ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => toggleMutation.mutate(item)}>
-                        {item.ativa ? 'Ativa' : 'Inativa'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                      Nenhuma conta encontrada
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+                ) : (
+                  filtered.map((item) => {
+                    const s = saldoDa(item.id);
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <Landmark className="h-4 w-4 text-muted-foreground" />
+                            {item.nome}
+                          </div>
+                        </TableCell>
+                        <TableCell>{item.banco || '—'}</TableCell>
+                        <TableCell>{item.agencia && item.conta ? `${item.agencia} / ${item.conta}` : '—'}</TableCell>
+                        <TableCell>{tipos.find((t) => t.value === item.tipo)?.label || item.tipo}</TableCell>
+                        <TableCell>{formatBRL(item.saldo_inicial)}</TableCell>
+                        <TableCell className={s && s.saldo_efetivo < 0 ? 'text-destructive font-medium' : ''}>
+                          {s ? formatBRL(s.saldo_efetivo) : '—'}
+                        </TableCell>
+                        <TableCell className={s && s.saldo_previsto < 0 ? 'text-destructive font-medium' : ''}>
+                          {s ? formatBRL(s.saldo_previsto) : '—'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={item.ativa ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => toggleMutation.mutate(item)}>
+                            {item.ativa ? 'Ativa' : 'Inativa'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
-      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Editar' : 'Nova'} Conta Bancária</DialogTitle>
-          </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
-              <FormField control={form.control} name="nome" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nome</FormLabel>
-                  <FormControl><Input placeholder="Ex: Bradesco Principal" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="banco" render={({ field }) => (
+        <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editing ? 'Editar' : 'Nova'} Conta Bancária</DialogTitle>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
+                <FormField control={form.control} name="nome" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Banco</FormLabel>
-                    <FormControl><Input placeholder="Ex: Bradesco" {...field} /></FormControl>
+                    <FormLabel>Nome</FormLabel>
+                    <FormControl><Input placeholder="Ex: Bradesco Principal" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="tipo" render={({ field }) => (
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="banco" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Banco</FormLabel>
+                      <FormControl><Input placeholder="Ex: Bradesco" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="tipo" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tipo</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {tipos.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="agencia" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Agência</FormLabel>
+                      <FormControl><Input placeholder="0001" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="conta" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Conta</FormLabel>
+                      <FormControl><Input placeholder="12345-6" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <FormField control={form.control} name="saldo_inicial" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tipo</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {tipos.map((t) => (
-                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Saldo Inicial (R$)</FormLabel>
+                    <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="agencia" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Agência</FormLabel>
-                    <FormControl><Input placeholder="0001" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="conta" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Conta</FormLabel>
-                    <FormControl><Input placeholder="12345-6" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
-              <FormField control={form.control} name="saldo_inicial" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Saldo Inicial (R$)</FormLabel>
-                  <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
-                <Button type="submit" disabled={saveMutation.isPending}>
-                  {saveMutation.isPending ? 'Salvando...' : 'Salvar'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-    </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
+                  <Button type="submit" disabled={saveMutation.isPending}>
+                    {saveMutation.isPending ? 'Salvando...' : 'Salvar'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
   );
 }
