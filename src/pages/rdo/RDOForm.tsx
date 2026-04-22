@@ -14,6 +14,26 @@ import { Sun, Cloud, CloudRain, CloudLightning, Plus, Trash2, ChevronLeft, Chevr
 import { fetchAndGenerateRDOPdf } from '@/utils/fetchAndGenerateRDOPdf';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useSignedUrl } from '@/hooks/useSignedUrl';
+import { Skeleton } from '@/components/ui/skeleton';
+
+function RdoFotoPreview({ path, alt }: { path: string; alt: string }) {
+  if (path.startsWith('blob:') || path.startsWith('http')) {
+    return <img src={path} alt={alt} className="w-full h-32 object-cover" />;
+  }
+  return <RdoFotoPreviewSigned path={path} alt={alt} />;
+}
+
+function RdoFotoPreviewSigned({ path, alt }: { path: string; alt: string }) {
+  const { url, isLoading } = useSignedUrl('rdo-fotos', path);
+  if (isLoading) {
+    return <Skeleton className="w-full h-32" />;
+  }
+  if (!url) {
+    return <div className="w-full h-32 flex items-center justify-center bg-muted text-muted-foreground text-xs">Erro ao carregar</div>;
+  }
+  return <img src={url} alt={alt} className="w-full h-32 object-cover" />;
+}
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
