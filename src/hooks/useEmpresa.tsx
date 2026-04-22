@@ -16,6 +16,7 @@ interface EmpresaContextType {
   empresaAtiva: Empresa | null;
   setEmpresaAtiva: (empresa: Empresa) => void;
   isLoading: boolean;
+  semEmpresaVinculada: boolean;
 }
 
 const EmpresaContext = createContext<EmpresaContextType | undefined>(undefined);
@@ -38,6 +39,8 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
     enabled: !!user,
   });
 
+  const semEmpresaVinculada = !isLoading && empresas.length === 0;
+
   useEffect(() => {
     if (empresas.length > 0 && !empresaAtiva) {
       const saved = localStorage.getItem('empresa_ativa_id');
@@ -52,7 +55,7 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <EmpresaContext.Provider value={{ empresas, empresaAtiva, setEmpresaAtiva, isLoading }}>
+    <EmpresaContext.Provider value={{ empresas, empresaAtiva, setEmpresaAtiva, isLoading, semEmpresaVinculada }}>
       {children}
     </EmpresaContext.Provider>
   );

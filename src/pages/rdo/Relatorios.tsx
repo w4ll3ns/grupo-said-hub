@@ -141,7 +141,7 @@ export default function Relatorios() {
       )}
 
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
           <RDOForm rdoId={editingId} onClose={handleClose} />
         </DialogContent>
       </Dialog>

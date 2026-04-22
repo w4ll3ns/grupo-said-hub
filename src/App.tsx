@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { ThemeProvider } from "next-themes";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -44,74 +46,92 @@ import Perfis from "./pages/admin/Perfis";
 import Configuracoes from "./pages/admin/Configuracoes";
 import Tutoriais from "./pages/Tutoriais";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error: any) => {
+        const status = error?.status ?? error?.code;
+        if ([401, 403, 404].includes(status)) return false;
+        return failureCount < 2;
+      },
+    },
+    mutations: { retry: false },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            {/* Auth routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+        <ErrorBoundary>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                {/* Auth routes */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
 
-            {/* Protected routes */}
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<Home />} />
+                {/* Protected routes */}
+                <Route
+                  element={
+                    <ProtectedRoute>
+                      <AppLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route path="/" element={<Home />} />
 
-              {/* Financeiro */}
-              <Route path="/financeiro" element={<FinanceiroDashboard />} />
-              <Route path="/financeiro/plano-contas" element={<PlanoContas />} />
-              <Route path="/financeiro/contas-bancarias" element={<ContasBancarias />} />
-              <Route path="/financeiro/formas-pagamento" element={<FormasPagamento />} />
-              <Route path="/financeiro/centros-custo" element={<CentrosCusto />} />
-              <Route path="/financeiro/contas-pagar" element={<ContasPagar />} />
-              <Route path="/financeiro/contas-receber" element={<ContasReceber />} />
-              <Route path="/financeiro/lancamentos" element={<Lancamentos />} />
-              <Route path="/financeiro/transferencias" element={<Transferencias />} />
-              <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixa />} />
-              <Route path="/financeiro/dre" element={<DRE />} />
-              <Route path="/financeiro/metas" element={<Metas />} />
-              {/* RDO */}
-              <Route path="/rdo" element={<RDODashboard />} />
-              <Route path="/rdo/relatorios" element={<Relatorios />} />
-              <Route path="/rdo/obras" element={<Obras />} />
-              <Route path="/rdo/funcionarios" element={<Funcionarios />} />
-              <Route path="/rdo/equipamentos" element={<EquipamentosPage />} />
+                  {/* Financeiro */}
+                  <Route path="/financeiro" element={<FinanceiroDashboard />} />
+                  <Route path="/financeiro/plano-contas" element={<PlanoContas />} />
+                  <Route path="/financeiro/contas-bancarias" element={<ContasBancarias />} />
+                  <Route path="/financeiro/formas-pagamento" element={<FormasPagamento />} />
+                  <Route path="/financeiro/centros-custo" element={<CentrosCusto />} />
+                  <Route path="/financeiro/contas-pagar" element={<ContasPagar />} />
+                  <Route path="/financeiro/contas-receber" element={<ContasReceber />} />
+                  <Route path="/financeiro/lancamentos" element={<Lancamentos />} />
+                  <Route path="/financeiro/transferencias" element={<Transferencias />} />
+                  <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixa />} />
+                  <Route path="/financeiro/dre" element={<DRE />} />
+                  <Route path="/financeiro/metas" element={<Metas />} />
+                  {/* RDO */}
+                  <Route path="/rdo" element={<RDODashboard />} />
+                  <Route path="/rdo/relatorios" element={<Relatorios />} />
+                  <Route path="/rdo/obras" element={<Obras />} />
+                  <Route path="/rdo/funcionarios" element={<Funcionarios />} />
+                  <Route path="/rdo/equipamentos" element={<EquipamentosPage />} />
 
-              {/* Compras */}
-              <Route path="/compras" element={<ComprasDashboard />} />
-              <Route path="/compras/solicitacoes" element={<Solicitacoes />} />
-              <Route path="/compras/cotacoes" element={<Cotacoes />} />
-              <Route path="/compras/pedidos" element={<Pedidos />} />
-              <Route path="/compras/fornecedores" element={<Fornecedores />} />
-              <Route path="/compras/catalogo" element={<Catalogo />} />
+                  {/* Compras */}
+                  <Route path="/compras" element={<ComprasDashboard />} />
+                  <Route path="/compras/solicitacoes" element={<Solicitacoes />} />
+                  <Route path="/compras/cotacoes" element={<Cotacoes />} />
+                  <Route path="/compras/pedidos" element={<Pedidos />} />
+                  <Route path="/compras/fornecedores" element={<Fornecedores />} />
+                  <Route path="/compras/catalogo" element={<Catalogo />} />
 
-              {/* Admin */}
-              <Route path="/admin/empresas" element={<Empresas />} />
-              <Route path="/admin/usuarios" element={<Usuarios />} />
-              <Route path="/admin/perfis" element={<Perfis />} />
-              <Route path="/admin/configuracoes" element={<Configuracoes />} />
+                  {/* Admin */}
+                  <Route path="/admin/empresas" element={<Empresas />} />
+                  <Route path="/admin/usuarios" element={<Usuarios />} />
+                  <Route path="/admin/perfis" element={<Perfis />} />
+                  <Route path="/admin/configuracoes" element={<Configuracoes />} />
 
-              {/* Tutoriais */}
-              <Route path="/tutoriais" element={<Tutoriais />} />
-            </Route>
+                  {/* Tutoriais */}
+                  <Route path="/tutoriais" element={<Tutoriais />} />
+                </Route>
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </ErrorBoundary>
+      </ThemeProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
