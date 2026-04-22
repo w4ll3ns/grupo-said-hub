@@ -1,54 +1,45 @@
 
 
-# Área de Tutoriais do Sistema
+# Anexo de Nota Fiscal em Lançamentos
 
-## O que será feito
-Criar uma seção "Tutoriais" no menu lateral, acessível a todos os usuários, com documentação passo-a-passo de todas as funcionalidades do sistema. O conteúdo será escrito com base no código real de cada página.
+## Resumo
+Adicionar campo opcional para upload de PDF da nota fiscal ao criar/editar lançamentos financeiros, com limite de 5 MB por arquivo.
 
-## Estrutura
+## Alterações
 
-### 1. Arquivo de dados `src/data/tutoriais.ts`
-Conteúdo centralizado com tutoriais organizados por módulo. Cada tutorial terá:
-- Titulo e descrição
-- Passos numerados explicando o fluxo completo
-- Dicas e observações relevantes
+### 1. Criar bucket de storage `notas-fiscais`
+Migração SQL para criar o bucket com RLS permitindo upload/download para usuários autenticados que pertencem à empresa do lançamento.
 
-Cobertura completa:
+### 2. Adicionar coluna `nota_fiscal_url` na tabela `lancamentos`
+Migração SQL:
+```sql
+ALTER TABLE lancamentos ADD COLUMN nota_fiscal_url text;
+```
 
-**Financeiro** (12 tutoriais): Dashboard, Lançamentos (abas Pagar/Receber), Contas a Pagar, Contas a Receber, Transferências, Fluxo de Caixa, DRE, Metas, Plano de Contas, Contas Bancárias, Formas de Pagamento, Centros de Custo
+### 3. Atualizar `LancamentosPage.tsx`
+- Adicionar input de arquivo (aceitar apenas PDF, limite 5 MB validado no frontend)
+- No submit, fazer upload do PDF para o bucket `notas-fiscais` com path `{empresa_id}/{lancamento_id}.pdf`
+- Salvar a URL pública no campo `nota_fiscal_url`
+- Na edição, mostrar link para visualizar o PDF já anexado e opção de substituir
+- Na tabela, exibir ícone de clipe/link quando houver nota fiscal anexada
 
-**RDO** (5 tutoriais): Dashboard, Relatórios Diários (criar, editar, gerar PDF), Obras, Funcionários, Equipamentos
+### 4. Atualizar tipo `Lancamento`
+Incluir `nota_fiscal_url: string | null` no type local.
 
-**Compras** (6 tutoriais): Dashboard, Solicitações (criar, aprovar/rejeitar, enviar), Cotações, Pedidos, Fornecedores, Catálogo
-
-**Administração** (4 tutoriais): Empresas, Usuários (criar, editar, vincular perfis/empresas, proteção contra auto-bloqueio), Perfis (permissões por módulo), Configurações
-
-**Acesso ao sistema** (3 tutoriais): Login, Recuperação de senha, Troca de empresa ativa
-
-### 2. Página `src/pages/Tutoriais.tsx`
-- Accordion por módulo com ícone e badge de quantidade
-- Cards dentro de cada módulo com título, descrição e passos
-- Campo de busca para filtrar tutoriais por texto
-- Usa componentes existentes: Accordion, Card, Badge, Input
-
-### 3. Menu lateral `AppSidebar.tsx`
-- Item fixo "Tutoriais" no final do sidebar (ícone BookOpen)
-- Sem controle de permissão — visível para todos
-
-### 4. Rota `App.tsx`
-- `/tutoriais` dentro das rotas protegidas
+### 5. Atualizar tutoriais
+Adicionar informação sobre o anexo de nota fiscal nos tutoriais de Lançamentos em `src/data/tutoriais.ts`.
 
 ## Arquivos envolvidos
 
-| Arquivo | Ação |
+| Arquivo | Acao |
 |---------|------|
-| `src/data/tutoriais.ts` | Criar — ~30 tutoriais com passo-a-passo |
-| `src/pages/Tutoriais.tsx` | Criar — página com busca + accordion |
-| `src/components/layout/AppSidebar.tsx` | Adicionar item fixo "Tutoriais" |
-| `src/App.tsx` | Adicionar rota `/tutoriais` |
+| Migração SQL | Criar bucket + coluna `nota_fiscal_url` |
+| `src/pages/financeiro/LancamentosPage.tsx` | Upload de PDF + exibição |
+| `src/data/tutoriais.ts` | Atualizar tutorial de Lançamentos |
 
 ## Detalhes técnicos
-- Conteúdo 100% estático no frontend — sem banco de dados
-- Arquivo de dados separado para facilitar manutenção futura
-- Cada modificação de fluxo no sistema deverá atualizar o tutorial correspondente em `src/data/tutoriais.ts`
+- Limite de 5 MB validado no frontend antes do upload (arquivo maior mostra toast de erro)
+- Bucket `notas-fiscais` com acesso público para leitura (URLs diretas) e RLS para upload restrito a usuários autenticados da empresa
+- Upload usa `supabase.storage.from('notas-fiscais').upload(...)` com `upsert: true`
+- Aceita apenas `application/pdf`
 
