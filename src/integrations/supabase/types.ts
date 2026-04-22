@@ -453,6 +453,7 @@ export type Database = {
           empresa_id: string
           forma_pagamento_id: string | null
           id: string
+          nota_fiscal_url: string | null
           observacoes: string | null
           plano_despesa_id: string | null
           plano_receita_id: string | null
@@ -472,6 +473,7 @@ export type Database = {
           empresa_id: string
           forma_pagamento_id?: string | null
           id?: string
+          nota_fiscal_url?: string | null
           observacoes?: string | null
           plano_despesa_id?: string | null
           plano_receita_id?: string | null
@@ -491,6 +493,7 @@ export type Database = {
           empresa_id?: string
           forma_pagamento_id?: string | null
           id?: string
+          nota_fiscal_url?: string | null
           observacoes?: string | null
           plano_despesa_id?: string | null
           plano_receita_id?: string | null
