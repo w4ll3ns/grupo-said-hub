@@ -1520,7 +1520,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vw_profiles_visiveis: {
+        Row: {
+          ativo: boolean | null
+          cargo: string | null
+          id: string | null
+          matricula: string | null
+          nome: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_permission: {
