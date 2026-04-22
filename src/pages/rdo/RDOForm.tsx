@@ -235,8 +235,7 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
         const path = `${empresaAtiva!.id}/${rdoIdToUse}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
         const { error } = await supabase.storage.from('rdo-fotos').upload(path, foto.file);
         if (error) { console.error(error); continue; }
-        const { data: urlData } = supabase.storage.from('rdo-fotos').getPublicUrl(path);
-        uploaded.push({ url: urlData.publicUrl, legenda: foto.legenda });
+        uploaded.push({ url: path, legenda: foto.legenda }); // guardamos apenas o path
       } else if (foto.url && !foto.url.startsWith('blob:')) {
         uploaded.push({ url: foto.url, legenda: foto.legenda });
       }
@@ -653,7 +652,7 @@ export default function RDOForm({ rdoId, onClose }: RDOFormProps) {
               <div className="grid grid-cols-2 gap-3">
                 {fotos.map((foto, idx) => (
                   <div key={idx} className="relative rounded-lg border overflow-hidden">
-                    <img src={foto.url} alt={foto.legenda || 'Foto RDO'} className="w-full h-32 object-cover" />
+                    <RdoFotoPreview path={foto.url} alt={foto.legenda || 'Foto RDO'} />
                     <button type="button" onClick={() => setFotos(fotos.filter((_, i) => i !== idx))}
                       className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1">
                       <X className="h-3 w-3" />

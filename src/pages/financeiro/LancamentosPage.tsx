@@ -161,8 +161,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
       .from('notas-fiscais')
       .upload(filePath, file, { upsert: true, contentType: 'application/pdf' });
     if (error) throw error;
-    const { data: urlData } = supabase.storage.from('notas-fiscais').getPublicUrl(filePath);
-    return urlData.publicUrl;
+    return filePath; // guardamos apenas o path, signed URL é gerada sob demanda
   };
 
   const saveMutation = useMutation({
@@ -380,18 +379,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                         {ccNome || '—'}
                       </TableCell>
                       <TableCell>
-                        {item.nota_fiscal_url ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <a href={item.nota_fiscal_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-                                <Paperclip className="h-4 w-4" />
-                              </a>
-                            </TooltipTrigger>
-                            <TooltipContent>Ver Nota Fiscal</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        <NotaFiscalLink path={item.nota_fiscal_url} />
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
