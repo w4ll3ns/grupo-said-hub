@@ -284,7 +284,7 @@ export default function Solicitacoes() {
           <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Motivo da rejeição..." />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setRejectDialog(null); setRejectReason(''); }}>Cancelar</Button>
-            <Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => <Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason } })}>Rejeitar</Button> variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason } })}>Rejeitar</Button> })}>Rejeitar</Button>
+            <Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason } })}>Rejeitar</Button> disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason } })}>Rejeitar</Button> variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectDialog && updateStatusMutation.mutate({ id: rejectDialog, status: 'rejeitada', extras: { motivo_rejeicao: rejectReason } })}>Rejeitar</Button> })}>Rejeitar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
