@@ -111,14 +111,18 @@ export const tutoriaisData: ModuloTutorial[] = [
           'Selecione a conta bancária, forma de pagamento e centro de custo (opcionais).',
           'Para despesas: selecione uma categoria do Plano de Despesas.',
           'Para receitas: selecione uma categoria do Plano de Receitas.',
+          'Para anexar a nota fiscal, clique em "Anexar PDF" e selecione o arquivo (apenas PDF, máximo 5 MB).',
           'Clique em "Salvar" para registrar o lançamento.',
           'Para editar, clique no ícone de edição na linha do lançamento.',
           'Para excluir, clique no ícone de exclusão e confirme a ação.',
+          'Na tabela, lançamentos com nota fiscal anexada exibem um ícone de clipe na coluna "NF". Clique para visualizar o PDF.',
         ],
         dicas: [
           'O status inicial é "Pendente". Altere para "Pago" quando efetivado.',
           'Data de pagamento é preenchida ao marcar como pago.',
           'Lançamentos afetam diretamente o Fluxo de Caixa e DRE.',
+          'Ao editar um lançamento, você pode visualizar a nota fiscal atual ou substituí-la por um novo arquivo.',
+          'O limite de tamanho do PDF da nota fiscal é 5 MB para evitar problemas de armazenamento.',
         ],
       },
       {
