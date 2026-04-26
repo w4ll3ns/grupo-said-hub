@@ -778,7 +778,16 @@ function AddFornecedorDialog({
                   <FormLabel>Fornecedor *</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                    <SelectContent>{fornecedores.map((f: any) => <SelectItem key={f.id} value={f.id}>{f.razao_social}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {fornecedores.map((f: any) => {
+                        const jaCotado = idsJaCotados.has(f.id);
+                        return (
+                          <SelectItem key={f.id} value={f.id} disabled={jaCotado}>
+                            {f.razao_social}{jaCotado ? ' (já cotou esta SC)' : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
                   </Select>
                   <FormMessage />
                 </FormItem>
