@@ -124,16 +124,37 @@ export default function CotacoesComparativo() {
   }, [cotacoes]);
 
   const hasApproved = cotacoes.some((c: any) => c.status === 'aprovada');
+  const hasPedidoAtivo = cotacoes.some((c: any) => (c.pedidos_compra || []).some((p: any) => p.status !== 'cancelado'));
+
+  // Resumo do mapa
+  const totaisValidos = cotacoes.map((c: any) => Number(c.valor_total) || 0).filter((v: number) => v > 0);
+  const menorTotal = totaisValidos.length ? Math.min(...totaisValidos) : 0;
+  const maiorTotal = totaisValidos.length ? Math.max(...totaisValidos) : 0;
+  const diferencaPct = menorTotal > 0 ? ((maiorTotal - menorTotal) / menorTotal) * 100 : 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Comparativo de Cotações</h1>
-          <p className="text-muted-foreground">SC-{sol?.numero} {sol?.justificativa ? `— ${sol.justificativa}` : ''}</p>
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold tracking-tight">Mapa de Cotação — SC-{sol?.numero}</h1>
+          <p className="text-muted-foreground">{sol?.justificativa || 'Comparativo lado a lado das propostas dos fornecedores'}</p>
         </div>
+        {!hasPedidoAtivo && solicitacaoId && (
+          <Button variant="outline" onClick={() => navigate(`/compras/cotacoes?addForn=${solicitacaoId}`)}>
+            <UserPlus className="mr-2 h-4 w-4" /> Adicionar fornecedor
+          </Button>
+        )}
       </div>
+
+      {cotacoes.length > 1 && (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm flex flex-wrap gap-x-6 gap-y-1">
+          <span><strong>{cotacoes.length}</strong> fornecedores cotados</span>
+          {menorTotal > 0 && <span>Menor total: <strong className="text-primary">{formatBRL(menorTotal)}</strong></span>}
+          {maiorTotal > 0 && <span>Maior total: <strong>{formatBRL(maiorTotal)}</strong></span>}
+          {diferencaPct > 0 && <span>Diferença: <strong>{formatBRL(maiorTotal - menorTotal)}</strong> ({diferencaPct.toFixed(1)}%)</span>}
+        </div>
+      )}
 
       {cotacoes.length === 0 ? (
         <div className="rounded-md border p-8 text-center text-muted-foreground">
