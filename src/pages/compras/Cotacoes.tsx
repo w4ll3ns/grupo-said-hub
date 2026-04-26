@@ -172,11 +172,16 @@ export default function Cotacoes() {
   // Pré-seleciona SC se vier por query param
   useEffect(() => {
     const sc = searchParams.get('sc');
+    const addForn = searchParams.get('addForn');
     if (sc && !open) {
       form.setValue('solicitacao_id', sc);
       setOpen(true);
-      // limpa o param para não reabrir
       searchParams.delete('sc');
+      setSearchParams(searchParams, { replace: true });
+    }
+    if (addForn) {
+      setAddFornecedorScId(addForn);
+      searchParams.delete('addForn');
       setSearchParams(searchParams, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
