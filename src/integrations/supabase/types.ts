@@ -1661,6 +1661,8 @@ export type Database = {
       }
     }
     Functions: {
+      aprovar_cotacao: { Args: { _cotacao_id: string }; Returns: undefined }
+      concluir_pedido: { Args: { _pedido_id: string }; Returns: undefined }
       criar_transferencia: {
         Args: {
           _conta_destino_id: string
@@ -1674,6 +1676,14 @@ export type Database = {
       }
       estornar_transferencia: {
         Args: { _motivo?: string; _transferencia_id: string }
+        Returns: string
+      }
+      gerar_pedido_compra: {
+        Args: {
+          _cotacao_id: string
+          _data_entrega_prevista?: string
+          _observacoes?: string
+        }
         Returns: string
       }
       has_permission: {

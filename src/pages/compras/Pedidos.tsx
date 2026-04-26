@@ -42,35 +42,33 @@ export default function Pedidos() {
   const { data: cotacoesAprovadas = [] } = useQuery({
     queryKey: ['cotacoes_aprovadas', empresaAtiva?.id],
     queryFn: async () => {
-      const { data } = await supabase.from('cotacoes').select('id, numero, fornecedor_id, valor_total, fornecedores(razao_social)').eq('empresa_id', empresaAtiva!.id).eq('status', 'aprovada').order('numero');
-      return data || [];
+      const { data } = await supabase.from('cotacoes').select('id, numero, fornecedor_id, valor_total, fornecedores(razao_social), pedidos_compra(id, status)').eq('empresa_id', empresaAtiva!.id).eq('status', 'aprovada').order('numero');
+      return (data || []).filter((c: any) => !(c.pedidos_compra || []).some((p: any) => p.status !== 'cancelado'));
     },
     enabled: !!empresaAtiva,
   });
 
   const gerarPedidoMutation = useMutation({
     mutationFn: async (cotacaoId: string) => {
-      const cotacao = cotacoesAprovadas.find((c: any) => c.id === cotacaoId);
-      if (!cotacao) throw new Error('Cotação não encontrada');
-      const { error } = await supabase.from('pedidos_compra').insert({
-        empresa_id: empresaAtiva!.id,
-        cotacao_id: cotacaoId,
-        fornecedor_id: (cotacao as any).fornecedor_id,
-        valor_total: (cotacao as any).valor_total,
-      });
+      const { error } = await supabase.rpc('gerar_pedido_compra', { _cotacao_id: cotacaoId });
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['pedidos_compra'] }); qc.invalidateQueries({ queryKey: ['cotacoes_aprovadas'] }); toast.success('Pedido gerado com sucesso'); setOpen(false); setSelectedCotacao(''); },
-    onError: () => toast.error('Erro ao gerar pedido'),
+    onError: (e: any) => toast.error(e?.message || 'Erro ao gerar pedido'),
   });
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const { error } = await supabase.from('pedidos_compra').update({ status }).eq('id', id);
-      if (error) throw error;
+      if (status === 'entregue') {
+        const { error } = await supabase.rpc('concluir_pedido', { _pedido_id: id });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('pedidos_compra').update({ status }).eq('id', id);
+        if (error) throw error;
+      }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pedidos_compra'] }); toast.success('Status atualizado'); },
-    onError: () => toast.error('Erro ao atualizar'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pedidos_compra'] }); qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] }); toast.success('Status atualizado'); },
+    onError: (e: any) => toast.error(e?.message || 'Erro ao atualizar'),
   });
 
   const filtered = pedidos.filter((p: any) =>

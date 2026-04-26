@@ -95,13 +95,26 @@ export default function Cotacoes() {
     onError: () => toast.error('Erro ao criar cotação'),
   });
 
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const { error } = await supabase.from('cotacoes').update({ status }).eq('id', id);
+  const aprovarMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc('aprovar_cotacao', { _cotacao_id: id });
       if (error) throw error;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cotacoes'] }); toast.success('Status atualizado'); },
-    onError: () => toast.error('Erro ao atualizar'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cotacoes'] });
+      qc.invalidateQueries({ queryKey: ['cotacoes_aprovadas'] });
+      toast.success('Cotação aprovada (concorrentes recusadas)');
+    },
+    onError: (e: any) => toast.error(e?.message || 'Erro ao aprovar cotação'),
+  });
+
+  const rejeitarMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('cotacoes').update({ status: 'rejeitada' }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cotacoes'] }); toast.success('Cotação rejeitada'); },
+    onError: (e: any) => toast.error(e?.message || 'Erro ao rejeitar'),
   });
 
   const handleClose = () => { setOpen(false); form.reset({ solicitacao_id: '', fornecedor_id: '', valor_total: 0, condicao_pagamento: '', prazo_entrega: '', observacoes: '' }); };
@@ -162,8 +175,8 @@ export default function Cotacoes() {
                     <TableCell>
                       {c.status === 'pendente' && canApproveCompras && (
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: c.id, status: 'aprovada' })} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: c.id, status: 'rejeitada' })} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => rejeitarMutation.mutate(c.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
                         </div>
                       )}
                     </TableCell>
