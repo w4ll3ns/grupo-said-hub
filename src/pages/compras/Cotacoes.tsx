@@ -679,6 +679,7 @@ export default function Cotacoes() {
         onClose={() => setAddFornecedorScId(null)}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ['cotacoes'] });
+          qc.invalidateQueries({ queryKey: ['fornecedores_ja_cotados'] });
           setAddFornecedorScId(null);
         }}
       />
