@@ -1707,6 +1707,14 @@ export type Database = {
         Args: { _cotacao: Json; _itens: Json }
         Returns: string
       }
+      salvar_mapa_cotacao: {
+        Args: {
+          _empresa_id: string
+          _fornecedores: Json
+          _solicitacao_id: string
+        }
+        Returns: string[]
+      }
       user_belongs_to_empresa: {
         Args: { _empresa_id: string; _user_id: string }
         Returns: boolean

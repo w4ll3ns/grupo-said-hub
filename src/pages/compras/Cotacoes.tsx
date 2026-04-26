@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useEmpresa } from '@/hooks/useEmpresa';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format } from 'date-fns';
@@ -19,7 +19,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Plus, Search, CalendarIcon, CheckCircle, XCircle, Eye, GitCompare } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Plus, Search, CalendarIcon, CheckCircle, XCircle, Eye, GitCompare, Trash2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
@@ -39,33 +40,55 @@ const itemSchema = z.object({
   valor_unitario: z.coerce.number().min(0.01, 'Informe um valor unitário'),
 });
 
-const schema = z.object({
-  solicitacao_id: z.string().min(1, 'Selecione uma solicitação'),
+const fornecedorPropostaSchema = z.object({
   fornecedor_id: z.string().min(1, 'Selecione um fornecedor'),
   data_validade: z.date().optional(),
   condicao_pagamento: z.string().max(200).optional().or(z.literal('')),
   prazo_entrega: z.string().max(200).optional().or(z.literal('')),
   observacoes: z.string().max(1000).optional().or(z.literal('')),
-  itens: z.array(itemSchema).min(1, 'A solicitação selecionada não tem itens'),
+  itens: z.array(itemSchema).min(1, 'Itens não carregados'),
 });
-type FormData = z.infer<typeof schema>;
+
+const mapaSchema = z.object({
+  solicitacao_id: z.string().min(1, 'Selecione uma solicitação'),
+  fornecedores: z.array(fornecedorPropostaSchema).min(1, 'Adicione ao menos 1 fornecedor'),
+}).refine(
+  (v) => new Set(v.fornecedores.map(f => f.fornecedor_id)).size === v.fornecedores.length,
+  { message: 'Não repita o mesmo fornecedor no mapa', path: ['fornecedores'] }
+);
+
+type MapaFormData = z.infer<typeof mapaSchema>;
+
+// Schema simples para "Adicionar fornecedor a uma SC existente"
+const addFornecedorSchema = z.object({
+  fornecedor_id: z.string().min(1),
+  data_validade: z.date().optional(),
+  condicao_pagamento: z.string().max(200).optional().or(z.literal('')),
+  prazo_entrega: z.string().max(200).optional().or(z.literal('')),
+  observacoes: z.string().max(1000).optional().or(z.literal('')),
+  itens: z.array(itemSchema).min(1),
+});
+type AddFornecedorFormData = z.infer<typeof addFornecedorSchema>;
 
 export default function Cotacoes() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { empresaAtiva } = useEmpresa();
   const { isAdmin, canApprove } = usePermissions();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [addFornecedorScId, setAddFornecedorScId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [viewItens, setViewItens] = useState<any | null>(null);
 
-  const form = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: { solicitacao_id: '', fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] },
+  const form = useForm<MapaFormData>({
+    resolver: zodResolver(mapaSchema),
+    defaultValues: { solicitacao_id: '', fornecedores: [] },
   });
-  const { fields, replace } = useFieldArray({ control: form.control, name: 'itens' });
-  const watchedItens = form.watch('itens');
-  const valorTotalCalc = watchedItens.reduce((acc, it) => acc + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
+  const { fields: fornecedorFields, append: appendFornecedor, remove: removeFornecedor } = useFieldArray({
+    control: form.control,
+    name: 'fornecedores',
+  });
 
   const { data: cotacoes = [], isLoading } = useQuery({
     queryKey: ['cotacoes', empresaAtiva?.id],
@@ -98,10 +121,11 @@ export default function Cotacoes() {
     enabled: !!empresaAtiva,
   });
 
-  // Carrega itens da SC quando o usuário a seleciona
   const watchedSolId = form.watch('solicitacao_id');
+
+  // Carrega itens da SC e replica para todos os fornecedores quando a SC muda
   useEffect(() => {
-    if (!watchedSolId) { replace([]); return; }
+    if (!watchedSolId) return;
     let cancel = false;
     (async () => {
       const { data, error } = await supabase
@@ -110,34 +134,97 @@ export default function Cotacoes() {
         .eq('solicitacao_id', watchedSolId);
       if (cancel) return;
       if (error) { toast.error('Erro ao carregar itens da solicitação'); return; }
-      replace((data || []).map((it: any) => ({
+      const itensBase = (data || []).map((it: any) => ({
         solicitacao_item_id: it.id,
         descricao: it.descricao,
         quantidade: Number(it.quantidade),
         unidade: it.unidade,
         valor_unitario: 0,
-      })));
+      }));
+      // Aplica em todos os fornecedores existentes (preservando preços já digitados se SC for a mesma)
+      const current = form.getValues('fornecedores');
+      const updated = current.map(f => ({
+        ...f,
+        itens: itensBase.map((base) => {
+          const prev = f.itens?.find((p: any) => p.solicitacao_item_id === base.solicitacao_item_id);
+          return prev ? { ...base, valor_unitario: prev.valor_unitario } : base;
+        }),
+      }));
+      // Se ainda não existe nenhum fornecedor, cria o primeiro vazio
+      if (updated.length === 0) {
+        form.setValue('fornecedores', [{
+          fornecedor_id: '',
+          condicao_pagamento: '',
+          prazo_entrega: '',
+          observacoes: '',
+          itens: itensBase,
+        }] as any);
+      } else {
+        form.setValue('fornecedores', updated as any);
+      }
     })();
     return () => { cancel = true; };
-  }, [watchedSolId, replace]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedSolId]);
+
+  // Pré-seleciona SC se vier por query param
+  useEffect(() => {
+    const sc = searchParams.get('sc');
+    if (sc && !open) {
+      form.setValue('solicitacao_id', sc);
+      setOpen(true);
+      // limpa o param para não reabrir
+      searchParams.delete('sc');
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handleAddFornecedor = async () => {
+    // Carrega itens da SC para inicializar o novo fornecedor
+    if (!watchedSolId) {
+      toast.error('Selecione a solicitação primeiro');
+      return;
+    }
+    const { data } = await supabase
+      .from('solicitacao_itens')
+      .select('id, descricao, quantidade, unidade')
+      .eq('solicitacao_id', watchedSolId);
+    const itens = (data || []).map((it: any) => ({
+      solicitacao_item_id: it.id,
+      descricao: it.descricao,
+      quantidade: Number(it.quantidade),
+      unidade: it.unidade,
+      valor_unitario: 0,
+    }));
+    appendFornecedor({
+      fornecedor_id: '',
+      condicao_pagamento: '',
+      prazo_entrega: '',
+      observacoes: '',
+      itens,
+    } as any);
+  };
 
   const saveMutation = useMutation({
-    mutationFn: async (values: FormData) => {
-      const cotacao = {
-        empresa_id: empresaAtiva!.id,
-        solicitacao_id: values.solicitacao_id,
-        fornecedor_id: values.fornecedor_id,
-        data_validade: values.data_validade ? format(values.data_validade, 'yyyy-MM-dd') : null,
-        condicao_pagamento: values.condicao_pagamento || null,
-        prazo_entrega: values.prazo_entrega || null,
-        observacoes: values.observacoes || null,
-      };
-      const itens = values.itens.map((it) => ({
-        solicitacao_item_id: it.solicitacao_item_id,
-        quantidade: it.quantidade,
-        valor_unitario: it.valor_unitario,
+    mutationFn: async (values: MapaFormData) => {
+      const payload = values.fornecedores.map(f => ({
+        fornecedor_id: f.fornecedor_id,
+        data_validade: f.data_validade ? format(f.data_validade, 'yyyy-MM-dd') : null,
+        condicao_pagamento: f.condicao_pagamento || null,
+        prazo_entrega: f.prazo_entrega || null,
+        observacoes: f.observacoes || null,
+        itens: f.itens.map(it => ({
+          solicitacao_item_id: it.solicitacao_item_id,
+          quantidade: it.quantidade,
+          valor_unitario: it.valor_unitario,
+        })),
       }));
-      const { error } = await supabase.rpc('salvar_cotacao_com_itens', { _cotacao: cotacao as any, _itens: itens as any });
+      const { error } = await supabase.rpc('salvar_mapa_cotacao', {
+        _solicitacao_id: values.solicitacao_id,
+        _empresa_id: empresaAtiva!.id,
+        _fornecedores: payload as any,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -145,10 +232,10 @@ export default function Cotacoes() {
       qc.invalidateQueries({ queryKey: ['solicitacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
-      toast.success('Cotação criada com itens');
+      toast.success('Mapa de cotação salvo');
       handleClose();
     },
-    onError: (e: any) => toast.error(e?.message || 'Erro ao criar cotação'),
+    onError: (e: any) => toast.error(e?.message || 'Erro ao salvar mapa de cotação'),
   });
 
   const aprovarMutation = useMutation({
@@ -175,7 +262,7 @@ export default function Cotacoes() {
 
   const handleClose = () => {
     setOpen(false);
-    form.reset({ solicitacao_id: '', fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] });
+    form.reset({ solicitacao_id: '', fornecedores: [] });
   };
 
   const openItens = async (cot: any) => {
@@ -193,11 +280,20 @@ export default function Cotacoes() {
     (c.fornecedores?.razao_social || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  // Resumo do mapa em construção
+  const watchedFornecedores = useWatch({ control: form.control, name: 'fornecedores' }) || [];
+  const totaisPorFornecedor = useMemo(() => watchedFornecedores.map((f: any) =>
+    (f?.itens || []).reduce((acc: number, it: any) => acc + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0)
+  ), [watchedFornecedores]);
+  const totaisFiltrados = totaisPorFornecedor.filter(t => t > 0);
+  const menorTotal = totaisFiltrados.length ? Math.min(...totaisFiltrados) : 0;
+  const maiorTotal = totaisFiltrados.length ? Math.max(...totaisFiltrados) : 0;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Cotações</h1>
-        <p className="text-muted-foreground">Gerencie cotações de fornecedores vinculadas a solicitações</p>
+        <p className="text-muted-foreground">Gerencie mapas de cotação com múltiplos fornecedores por solicitação</p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -205,7 +301,7 @@ export default function Cotacoes() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Buscar por número ou fornecedor..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="mr-2 h-4 w-4" /> Nova Cotação</Button>
+        <Button onClick={() => setOpen(true)}><Plus className="mr-2 h-4 w-4" /> Novo Mapa de Cotação</Button>
       </div>
 
       {isLoading ? (
@@ -223,7 +319,7 @@ export default function Cotacoes() {
                 <TableHead>Validade</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Pedido</TableHead>
-                <TableHead className="w-[160px]">Ações</TableHead>
+                <TableHead className="w-[200px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -233,6 +329,10 @@ export default function Cotacoes() {
                 const sc = statusConfig[c.status] || statusConfig.pendente;
                 const itensCount = (c.cotacao_itens || []).length;
                 const pedido = (c.pedidos_compra || []).find((p: any) => p.status !== 'cancelado');
+                const scTemPedido = filtered.some((x: any) =>
+                  x.solicitacao_id === c.solicitacao_id &&
+                  (x.pedidos_compra || []).some((p: any) => p.status !== 'cancelado')
+                );
                 return (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">COT-{c.numero}</TableCell>
@@ -255,6 +355,9 @@ export default function Cotacoes() {
                           <Button variant="ghost" size="icon" onClick={() => openItens(c)} title="Ver itens"><Eye className="h-4 w-4" /></Button>
                         )}
                         <Button variant="ghost" size="icon" onClick={() => navigate(`/compras/cotacoes/comparativo/${c.solicitacao_id}`)} title="Comparativo"><GitCompare className="h-4 w-4" /></Button>
+                        {!scTemPedido && (
+                          <Button variant="ghost" size="icon" onClick={() => setAddFornecedorScId(c.solicitacao_id)} title="Adicionar outro fornecedor a esta SC"><UserPlus className="h-4 w-4" /></Button>
+                        )}
                         {c.status === 'pendente' && canApproveCompras && !pedido && (
                           <>
                             <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
@@ -311,106 +414,345 @@ export default function Cotacoes() {
         </DialogContent>
       </Dialog>
 
+      {/* Mapa de Cotação dialog */}
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Nova Cotação</DialogTitle><DialogDescription>Selecione uma solicitação e informe o valor unitário de cada item.</DialogDescription></DialogHeader>
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Novo Mapa de Cotação</DialogTitle>
+            <DialogDescription>Selecione a solicitação e adicione propostas de um ou mais fornecedores.</DialogDescription>
+          </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="solicitacao_id" render={({ field }) => (
-                  <FormItem><FormLabel>Solicitação *</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                      <SelectContent>{solicitacoesAprovadas.map((s: any) => <SelectItem key={s.id} value={s.id}>SC-{s.numero}</SelectItem>)}</SelectContent>
-                    </Select><FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="fornecedor_id" render={({ field }) => (
-                  <FormItem><FormLabel>Fornecedor *</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                      <SelectContent>{fornecedores.map((f: any) => <SelectItem key={f.id} value={f.id}>{f.razao_social}</SelectItem>)}</SelectContent>
-                    </Select><FormMessage />
-                  </FormItem>
-                )} />
-              </div>
+              <FormField control={form.control} name="solicitacao_id" render={({ field }) => (
+                <FormItem className="max-w-sm">
+                  <FormLabel>Solicitação *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <SelectContent>{solicitacoesAprovadas.map((s: any) => <SelectItem key={s.id} value={s.id}>SC-{s.numero}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
 
-              {fields.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-2">Itens da solicitação</h4>
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Descrição</TableHead>
-                          <TableHead className="text-right w-[80px]">Qtd</TableHead>
-                          <TableHead className="w-[70px]">Un</TableHead>
-                          <TableHead className="w-[140px]">Valor Unit. (R$) *</TableHead>
-                          <TableHead className="text-right w-[120px]">Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {fields.map((f, idx) => {
-                          const item = watchedItens[idx];
-                          const total = (Number(item?.quantidade) || 0) * (Number(item?.valor_unitario) || 0);
-                          return (
-                            <TableRow key={f.id}>
-                              <TableCell className="text-sm">{item?.descricao}</TableCell>
-                              <TableCell className="text-right text-sm">{Number(item?.quantidade)}</TableCell>
-                              <TableCell className="text-sm">{item?.unidade}</TableCell>
-                              <TableCell>
-                                <FormField control={form.control} name={`itens.${idx}.valor_unitario`} render={({ field }) => (
-                                  <FormItem><FormControl><Input type="number" step="0.01" min="0.01" {...field} /></FormControl><FormMessage /></FormItem>
-                                )} />
-                              </TableCell>
-                              <TableCell className="text-right text-sm">{formatBRL(total)}</TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-right font-medium">Total da Cotação</TableCell>
-                          <TableCell className="text-right font-bold">{formatBRL(valorTotalCalc)}</TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
+              {watchedSolId && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-base">Propostas dos fornecedores</h3>
+                    <Button type="button" variant="outline" size="sm" onClick={handleAddFornecedor}>
+                      <Plus className="mr-2 h-4 w-4" /> Adicionar fornecedor
+                    </Button>
                   </div>
-                </div>
+
+                  {fornecedorFields.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">Adicione pelo menos um fornecedor para iniciar.</p>
+                  )}
+
+                  <div className="space-y-4">
+                    {fornecedorFields.map((field, fIdx) => {
+                      const itens = watchedFornecedores[fIdx]?.itens || [];
+                      const totalForn = itens.reduce((acc: number, it: any) => acc + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
+                      const isMenor = totalForn > 0 && totalForn === menorTotal && totaisFiltrados.length > 1;
+
+                      return (
+                        <Card key={field.id} className={cn(isMenor && 'border-primary')}>
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <CardTitle className="text-base flex items-center gap-2">
+                                Fornecedor #{fIdx + 1}
+                                {isMenor && <Badge variant="default">Menor preço</Badge>}
+                              </CardTitle>
+                              {fornecedorFields.length > 1 && (
+                                <Button type="button" variant="ghost" size="icon" onClick={() => removeFornecedor(fIdx)} title="Remover fornecedor">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <FormField control={form.control} name={`fornecedores.${fIdx}.fornecedor_id`} render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Fornecedor *</FormLabel>
+                                  <Select onValueChange={field.onChange} value={field.value}>
+                                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                      {fornecedores.map((f: any) => {
+                                        const jaUsado = watchedFornecedores.some((wf: any, i: number) => i !== fIdx && wf?.fornecedor_id === f.id);
+                                        return (
+                                          <SelectItem key={f.id} value={f.id} disabled={jaUsado}>
+                                            {f.razao_social}{jaUsado ? ' (já no mapa)' : ''}
+                                          </SelectItem>
+                                        );
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )} />
+                              <FormField control={form.control} name={`fornecedores.${fIdx}.data_validade`} render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Validade</FormLabel>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <FormControl>
+                                        <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>
+                                          <CalendarIcon className="mr-2 h-4 w-4" />
+                                          {field.value ? format(field.value, 'dd/MM/yyyy') : 'Selecionar'}
+                                        </Button>
+                                      </FormControl>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} /></PopoverContent>
+                                  </Popover>
+                                  <FormMessage />
+                                </FormItem>
+                              )} />
+                              <FormField control={form.control} name={`fornecedores.${fIdx}.condicao_pagamento`} render={({ field }) => (
+                                <FormItem><FormLabel>Condição Pagamento</FormLabel><FormControl><Input placeholder="Ex: 30/60 dias" {...field} /></FormControl><FormMessage /></FormItem>
+                              )} />
+                              <FormField control={form.control} name={`fornecedores.${fIdx}.prazo_entrega`} render={({ field }) => (
+                                <FormItem><FormLabel>Prazo Entrega</FormLabel><FormControl><Input placeholder="Ex: 15 dias" {...field} /></FormControl><FormMessage /></FormItem>
+                              )} />
+                            </div>
+
+                            <div className="rounded-md border">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Descrição</TableHead>
+                                    <TableHead className="text-right w-[80px]">Qtd</TableHead>
+                                    <TableHead className="w-[70px]">Un</TableHead>
+                                    <TableHead className="w-[140px]">Valor Unit. (R$) *</TableHead>
+                                    <TableHead className="text-right w-[120px]">Total</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {itens.map((item: any, iIdx: number) => {
+                                    const total = (Number(item?.quantidade) || 0) * (Number(item?.valor_unitario) || 0);
+                                    return (
+                                      <TableRow key={`${field.id}-${iIdx}`}>
+                                        <TableCell className="text-sm">{item?.descricao}</TableCell>
+                                        <TableCell className="text-right text-sm">{Number(item?.quantidade)}</TableCell>
+                                        <TableCell className="text-sm">{item?.unidade}</TableCell>
+                                        <TableCell>
+                                          <FormField control={form.control} name={`fornecedores.${fIdx}.itens.${iIdx}.valor_unitario`} render={({ field }) => (
+                                            <FormItem><FormControl><Input type="number" step="0.01" min="0.01" {...field} /></FormControl><FormMessage /></FormItem>
+                                          )} />
+                                        </TableCell>
+                                        <TableCell className="text-right text-sm">{formatBRL(total)}</TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                  <TableRow>
+                                    <TableCell colSpan={4} className="text-right font-medium">Total deste fornecedor</TableCell>
+                                    <TableCell className="text-right font-bold">{formatBRL(totalForn)}</TableCell>
+                                  </TableRow>
+                                </TableBody>
+                              </Table>
+                            </div>
+
+                            <FormField control={form.control} name={`fornecedores.${fIdx}.observacoes`} render={({ field }) => (
+                              <FormItem><FormLabel>Observações</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>
+                            )} />
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+
+                  {totaisFiltrados.length > 1 && (
+                    <div className="rounded-md border bg-muted/30 p-3 text-sm flex flex-wrap gap-x-6 gap-y-1">
+                      <span><strong>{totaisFiltrados.length}</strong> propostas precificadas</span>
+                      <span>Menor total: <strong className="text-primary">{formatBRL(menorTotal)}</strong></span>
+                      <span>Maior total: <strong>{formatBRL(maiorTotal)}</strong></span>
+                      {menorTotal > 0 && (
+                        <span>Diferença: <strong>{formatBRL(maiorTotal - menorTotal)}</strong> ({((maiorTotal - menorTotal) / menorTotal * 100).toFixed(1)}%)</span>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="data_validade" render={({ field }) => (
-                  <FormItem><FormLabel>Validade</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground")}>
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, 'dd/MM/yyyy') : 'Selecionar'}
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} /></PopoverContent>
-                    </Popover><FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="prazo_entrega" render={({ field }) => (
-                  <FormItem><FormLabel>Prazo Entrega</FormLabel><FormControl><Input placeholder="Ex: 15 dias" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-              </div>
-              <FormField control={form.control} name="condicao_pagamento" render={({ field }) => (
-                <FormItem><FormLabel>Condição Pagamento</FormLabel><FormControl><Input placeholder="Ex: 30/60 dias" {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="observacoes" render={({ field }) => (
-                <FormItem><FormLabel>Observações</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
-                <Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? 'Salvando...' : 'Criar Cotação'}</Button>
+                <Button type="submit" disabled={saveMutation.isPending || fornecedorFields.length === 0}>
+                  {saveMutation.isPending ? 'Salvando...' : 'Salvar Mapa de Cotação'}
+                </Button>
               </DialogFooter>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog: Adicionar fornecedor a uma SC existente */}
+      <AddFornecedorDialog
+        scId={addFornecedorScId}
+        empresaId={empresaAtiva?.id}
+        fornecedores={fornecedores}
+        onClose={() => setAddFornecedorScId(null)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ['cotacoes'] });
+          setAddFornecedorScId(null);
+        }}
+      />
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Subcomponente: adicionar UM fornecedor adicional a uma SC já em cotação
+// ----------------------------------------------------------------------------
+function AddFornecedorDialog({
+  scId, empresaId, fornecedores, onClose, onSaved,
+}: {
+  scId: string | null;
+  empresaId: string | undefined;
+  fornecedores: any[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const form = useForm<AddFornecedorFormData>({
+    resolver: zodResolver(addFornecedorSchema),
+    defaultValues: { fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] },
+  });
+  const watchedItens = form.watch('itens');
+
+  useEffect(() => {
+    if (!scId) { form.reset({ fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] }); return; }
+    (async () => {
+      const { data } = await supabase
+        .from('solicitacao_itens')
+        .select('id, descricao, quantidade, unidade')
+        .eq('solicitacao_id', scId);
+      form.setValue('itens', (data || []).map((it: any) => ({
+        solicitacao_item_id: it.id,
+        descricao: it.descricao,
+        quantidade: Number(it.quantidade),
+        unidade: it.unidade,
+        valor_unitario: 0,
+      })) as any);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scId]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (values: AddFornecedorFormData) => {
+      const cotacao = {
+        empresa_id: empresaId,
+        solicitacao_id: scId,
+        fornecedor_id: values.fornecedor_id,
+        data_validade: values.data_validade ? format(values.data_validade, 'yyyy-MM-dd') : null,
+        condicao_pagamento: values.condicao_pagamento || null,
+        prazo_entrega: values.prazo_entrega || null,
+        observacoes: values.observacoes || null,
+      };
+      const itens = values.itens.map(it => ({
+        solicitacao_item_id: it.solicitacao_item_id,
+        quantidade: it.quantidade,
+        valor_unitario: it.valor_unitario,
+      }));
+      const { error } = await supabase.rpc('salvar_cotacao_com_itens', { _cotacao: cotacao as any, _itens: itens as any });
+      if (error) throw error;
+    },
+    onSuccess: () => { toast.success('Fornecedor adicionado ao mapa'); onSaved(); },
+    onError: (e: any) => toast.error(e?.message || 'Erro ao adicionar fornecedor'),
+  });
+
+  const totalForn = watchedItens.reduce((acc, it) => acc + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
+
+  return (
+    <Dialog open={!!scId} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Adicionar fornecedor à cotação</DialogTitle>
+          <DialogDescription>Inclua uma nova proposta para a mesma solicitação.</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <FormField control={form.control} name="fornecedor_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fornecedor *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <SelectContent>{fornecedores.map((f: any) => <SelectItem key={f.id} value={f.id}>{f.razao_social}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="data_validade" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Validade</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {field.value ? format(field.value, 'dd/MM/yyyy') : 'Selecionar'}
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} /></PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="condicao_pagamento" render={({ field }) => (
+                <FormItem><FormLabel>Condição Pagamento</FormLabel><FormControl><Input placeholder="Ex: 30/60 dias" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="prazo_entrega" render={({ field }) => (
+                <FormItem><FormLabel>Prazo Entrega</FormLabel><FormControl><Input placeholder="Ex: 15 dias" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead className="text-right w-[80px]">Qtd</TableHead>
+                    <TableHead className="w-[70px]">Un</TableHead>
+                    <TableHead className="w-[140px]">Valor Unit. (R$) *</TableHead>
+                    <TableHead className="text-right w-[120px]">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {watchedItens.map((item: any, idx: number) => {
+                    const total = (Number(item?.quantidade) || 0) * (Number(item?.valor_unitario) || 0);
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell className="text-sm">{item?.descricao}</TableCell>
+                        <TableCell className="text-right text-sm">{Number(item?.quantidade)}</TableCell>
+                        <TableCell className="text-sm">{item?.unidade}</TableCell>
+                        <TableCell>
+                          <FormField control={form.control} name={`itens.${idx}.valor_unitario`} render={({ field }) => (
+                            <FormItem><FormControl><Input type="number" step="0.01" min="0.01" {...field} /></FormControl><FormMessage /></FormItem>
+                          )} />
+                        </TableCell>
+                        <TableCell className="text-right text-sm">{formatBRL(total)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-right font-medium">Total</TableCell>
+                    <TableCell className="text-right font-bold">{formatBRL(totalForn)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+
+            <FormField control={form.control} name="observacoes" render={({ field }) => (
+              <FormItem><FormLabel>Observações</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? 'Salvando...' : 'Adicionar fornecedor'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }
