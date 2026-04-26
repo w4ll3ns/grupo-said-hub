@@ -36,6 +36,7 @@ import Relatorios from "./pages/rdo/Relatorios";
 import ComprasDashboard from "./pages/compras/Dashboard";
 import Solicitacoes from "./pages/compras/Solicitacoes";
 import Cotacoes from "./pages/compras/Cotacoes";
+import CotacoesComparativo from "./pages/compras/CotacoesComparativo";
 import Pedidos from "./pages/compras/Pedidos";
 import Fornecedores from "./pages/compras/Fornecedores";
 import Catalogo from "./pages/compras/Catalogo";
@@ -112,6 +113,7 @@ const App = () => (
                   <Route path="/compras" element={<ComprasDashboard />} />
                   <Route path="/compras/solicitacoes" element={<Solicitacoes />} />
                   <Route path="/compras/cotacoes" element={<Cotacoes />} />
+                  <Route path="/compras/cotacoes/comparativo/:solicitacaoId" element={<CotacoesComparativo />} />
                   <Route path="/compras/pedidos" element={<Pedidos />} />
                   <Route path="/compras/fornecedores" element={<Fornecedores />} />
                   <Route path="/compras/catalogo" element={<Catalogo />} />
