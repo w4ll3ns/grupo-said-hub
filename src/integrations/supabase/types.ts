@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      centro_custo_anexos: {
+        Row: {
+          centro_custo_id: string
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          empresa_id: string
+          id: string
+          nome_arquivo: string
+          path: string
+          tamanho_bytes: number | null
+          tipo_mime: string | null
+        }
+        Insert: {
+          centro_custo_id: string
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa_id: string
+          id?: string
+          nome_arquivo: string
+          path: string
+          tamanho_bytes?: number | null
+          tipo_mime?: string | null
+        }
+        Update: {
+          centro_custo_id?: string
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa_id?: string
+          id?: string
+          nome_arquivo?: string
+          path?: string
+          tamanho_bytes?: number | null
+          tipo_mime?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "centro_custo_anexos_centro_custo_id_fkey"
+            columns: ["centro_custo_id"]
+            isOneToOne: false
+            referencedRelation: "centros_custo"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       centros_custo: {
         Row: {
           ativo: boolean
