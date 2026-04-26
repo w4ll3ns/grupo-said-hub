@@ -562,9 +562,12 @@ export default function Cotacoes() {
                                     <SelectContent>
                                       {fornecedores.map((f: any) => {
                                         const jaUsado = watchedFornecedores.some((wf: any, i: number) => i !== fIdx && wf?.fornecedor_id === f.id);
+                                        const jaCotado = idsJaCotados.has(f.id);
+                                        const disabled = jaUsado || jaCotado;
+                                        const sufixo = jaCotado ? ' (já cotou esta SC)' : jaUsado ? ' (já no mapa)' : '';
                                         return (
-                                          <SelectItem key={f.id} value={f.id} disabled={jaUsado}>
-                                            {f.razao_social}{jaUsado ? ' (já no mapa)' : ''}
+                                          <SelectItem key={f.id} value={f.id} disabled={disabled}>
+                                            {f.razao_social}{sufixo}
                                           </SelectItem>
                                         );
                                       })}
