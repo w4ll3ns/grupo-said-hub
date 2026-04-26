@@ -1,57 +1,79 @@
-
-
-# Sprint 1 Etapa 1: Transferencias transacionais + saldo atual
+# Anexos múltiplos (contratos) em Centros de Custo
 
 ## Resumo
-Transformar transferencias de simples log em operacao transacional (RPC cria 2 lancamentos atomicamente), adicionar estorno contabil, e exibir saldo atual das contas bancarias via VIEW.
+Permitir que cada Centro de Custo tenha **um ou mais anexos** (tipicamente contratos em PDF, mas aceitando também imagens). Diferente de `lancamentos.nota_fiscal_url` que é 1:1, aqui usamos uma tabela dedicada `centro_custo_anexos` (1:N) para suportar múltiplos arquivos. Reaproveita a infraestrutura de bucket privado + signed URLs já estabelecida na Etapa 4.
 
-## Alteracoes
+## Arquitetura
 
-### 1. Migration SQL
-**Arquivo novo:** `supabase/migrations/20260422..._sprint1_transferencias_transacionais.sql`
+### 1. Novo bucket privado: `centro-custo-anexos`
+Mesmo padrão dos buckets `rdo-fotos` e `notas-fiscais`:
+- `public = false`
+- Path layout: `{empresa_id}/{centro_custo_id}/{uuid}.{ext}`
+- RLS de storage por empresa via `storage.foldername(name)[1]`
 
-Conteudo exato fornecido no prompt:
-- Novas colunas em `transferencias`: `tipo` (normal/estorno), `transferencia_original_id` (FK), `created_by`
-- Nova coluna em `lancamentos`: `transferencia_id` (FK)
-- Index `idx_lancamentos_conta_status` para performance de saldo
-- RPC `criar_transferencia()` — SECURITY DEFINER, valida permissao, cria 1 transferencia + 2 lancamentos (pagar/receber com status='pago') atomicamente
-- RPC `estornar_transferencia()` — SECURITY DEFINER, cria transferencia inversa + 2 lancamentos de estorno, impede estornar estorno ou estornar 2x
-- VIEW `vw_saldo_conta_atual` com `security_invoker=true` — retorna `saldo_inicial`, `saldo_efetivo` (apenas pagos), `saldo_previsto` (pagos + pendentes + vencidos)
+### 2. Nova tabela: `centro_custo_anexos`
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | gen_random_uuid |
+| `centro_custo_id` | uuid NOT NULL | FK para centros_custo ON DELETE CASCADE |
+| `empresa_id` | uuid NOT NULL | redundante para RLS performática |
+| `nome_arquivo` | text NOT NULL | nome original |
+| `path` | text NOT NULL | path no bucket |
+| `tamanho_bytes` | bigint | metadado |
+| `tipo_mime` | text | application/pdf, image/png... |
+| `descricao` | text | rótulo opcional (ex: "Aditivo 1") |
+| `created_at` | timestamptz | now() |
+| `created_by` | uuid | auth.uid() |
 
-### 2. Reescrever Transferencias.tsx
-**Arquivo:** `src/pages/financeiro/Transferencias.tsx`
+RLS espelhando o padrão de `centros_custo`:
+- View: `user_belongs_to_empresa + has_permission('financeiro','centros_custo','visualizar')`
+- Create: idem com `'criar'`
+- Delete: idem com `'editar'` (anexos não têm permissão própria — quem edita o centro pode gerenciar anexos)
+- Admin bypass via `is_admin(auth.uid())`
 
-- Remover `editing` state e `handleEdit` — transferencias transacionais nao sao editaveis (seria incoerente editar algo que gerou lancamentos)
-- Remover `deleteMutation` e AlertDialog de exclusao — substituido por estorno
-- Substituir `saveMutation` por chamada RPC `criar_transferencia` com invalidacao de `transferencias`, `lancamentos` e `vw_saldo_conta_atual`
-- Adicionar `estornarMutation` com chamada RPC `estornar_transferencia`
-- Atualizar tipo `Transferencia` para incluir `tipo`, `transferencia_original_id`, `created_by`
-- Adicionar coluna "Tipo" na tabela com Badge (Normal/Estorno com `destructive` variant)
-- Substituir botoes Editar/Excluir por botao Estornar (icone `Undo2`) — visivel apenas quando `tipo === 'normal'` e nao existe estorno associado (detectado via Set de `transferencia_original_id`)
-- Adicionar AlertDialog de confirmacao de estorno com Textarea opcional para motivo
+Index em `(centro_custo_id)` para listagem rápida.
 
-### 3. Adicionar saldos em ContasBancarias.tsx
-**Arquivo:** `src/pages/financeiro/ContasBancarias.tsx`
+## Alterações
 
-- Adicionar query `vw_saldo_conta_atual` em paralelo com a query existente
-- Helper `saldoDa(contaId)` para buscar saldo de cada conta
-- Substituir coluna "Saldo Inicial" por 3 colunas: Saldo Inicial | Saldo Efetivo (tooltip "Apenas lancamentos pagos") | Saldo Previsto (tooltip "Pagos + pendentes")
-- Importar `Tooltip`, `TooltipTrigger`, `TooltipContent` e `TooltipProvider`
-- Saldo negativo colorido com `text-destructive`
-- Atualizar `colSpan` da linha "Nenhuma conta encontrada" para refletir as novas colunas
+### 1. Migration SQL — `..._centro_custo_anexos.sql`
+- Cria bucket `centro-custo-anexos` com `public = false`
+- Cria tabela `centro_custo_anexos` com FK CASCADE
+- Habilita RLS e cria 4 policies (SELECT/INSERT/DELETE + Admin ALL)
+- Cria policies de `storage.objects` para o novo bucket (SELECT/INSERT/DELETE) com isolamento por empresa
+- Index em `centro_custo_id`
+
+### 2. `src/lib/storage.ts` e `src/hooks/useSignedUrl.ts`
+- Estender o tipo `Bucket` para incluir `'centro-custo-anexos'`
+- Funções permanecem genéricas, sem mudanças de lógica
+
+### 3. Reescrever `src/pages/financeiro/CentrosCusto.tsx`
+- Nova query `centro_custo_anexos` filtrada pela empresa
+- Nova coluna **"Anexos"** mostrando contagem por centro (ex: "3 arquivo(s)") ou "—"
+- Substituir botão único por dois: **Editar** (lápis) e **Anexos** (paperclip)
+- Componente inline `AnexosDialog`:
+  - Lista anexos do centro com nome, descrição, tamanho, data
+  - Cada item: botão **Visualizar** (signed URL on-click → nova aba) e **Excluir** (AlertDialog → remove storage + tabela)
+  - Input `<input type="file" multiple accept="application/pdf,image/*">` + descrição opcional
+  - Mutation `uploadAnexos`: upload no bucket → INSERT na tabela com metadados
+  - Mutation `deleteAnexo`: storage delete → tabela delete
+  - Validação client: máx 10 MB/arquivo; tipos PDF/JPG/PNG/WEBP
+- Toast de feedback e invalidate de `['centro_custo_anexos']`
+
+### 4. Cleanup de arquivos órfãos
+**Não implementado nesta etapa.** Ao deletar um centro, registros caem por CASCADE mas arquivos ficam órfãos no storage. Decisão consciente para manter escopo; pode ser job futuro.
 
 ## Arquivos envolvidos
 
-| Arquivo | Acao |
-|---------|------|
-| `supabase/migrations/...sprint1_transferencias.sql` | Criar |
-| `src/pages/financeiro/Transferencias.tsx` | Reescrever (RPC + estorno) |
-| `src/pages/financeiro/ContasBancarias.tsx` | Adicionar 3 colunas de saldo |
+| Arquivo | Ação |
+|---|---|
+| `supabase/migrations/..._centro_custo_anexos.sql` | Criar |
+| `src/lib/storage.ts` | Estender tipo Bucket |
+| `src/hooks/useSignedUrl.ts` | Estender tipo Bucket |
+| `src/pages/financeiro/CentrosCusto.tsx` | Adicionar coluna Anexos + AnexosDialog |
 
-## Detalhes tecnicos
-- RPCs sao SECURITY DEFINER com checagem manual de permissao — nenhuma policy RLS nova necessaria
-- VIEW usa `security_invoker=true` e herda policies de `contas_bancarias` e `lancamentos`
-- Transferencias antigas (se houver) ficam com `tipo='normal'` por default sem lancamentos associados — saldo nao as reflete
-- Formulario de nova transferencia permanece igual (mesmos campos), apenas o submit muda para RPC
-- Tipos TypeScript serao regenerados automaticamente apos a migration
-
+## Detalhes técnicos
+- Reaproveita 100% da infra de buckets privados + signed URLs (10 min)
+- FK CASCADE garante integridade referencial automática
+- Permissão de anexos amarrada a `editar centro de custo` — não cria entrada nova na matriz
+- Tipos TS regenerados automaticamente após migration
+- Impacto isolado: nenhuma outra tela afetada
