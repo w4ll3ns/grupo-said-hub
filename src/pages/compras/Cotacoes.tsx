@@ -234,6 +234,7 @@ export default function Cotacoes() {
       qc.invalidateQueries({ queryKey: ['solicitacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
+      qc.invalidateQueries({ queryKey: ['fornecedores_ja_cotados'] });
       toast.success('Mapa de cotação salvo');
       handleClose();
     },
