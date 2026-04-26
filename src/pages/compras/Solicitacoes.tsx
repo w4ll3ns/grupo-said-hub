@@ -140,7 +140,7 @@ export default function Solicitacoes() {
       const { error } = await supabase.from('solicitacoes_compra').update({ status, ...extras }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] }); toast.success('Status atualizado'); setRejectDialog(null); setRejectReason(''); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] }); qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] }); toast.success('Status atualizado'); setRejectDialog(null); setRejectReason(''); },
     onError: () => toast.error('Erro ao atualizar status'),
   });
 
