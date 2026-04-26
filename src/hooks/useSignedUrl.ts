@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getSignedUrl } from '@/lib/storage';
 
-type Bucket = 'rdo-fotos' | 'notas-fiscais';
+type Bucket = 'rdo-fotos' | 'notas-fiscais' | 'centro-custo-anexos';
 
 /**
  * Hook que resolve um path em uma signed URL temporária.

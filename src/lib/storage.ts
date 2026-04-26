@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
-type Bucket = 'rdo-fotos' | 'notas-fiscais';
+type Bucket = 'rdo-fotos' | 'notas-fiscais' | 'centro-custo-anexos';
 
 /**
  * Gera uma signed URL temporária para um arquivo em bucket privado.
