@@ -144,6 +144,7 @@ export default function Cotacoes() {
       qc.invalidateQueries({ queryKey: ['cotacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] });
+      qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
       toast.success('Cotação criada com itens');
       handleClose();
     },
