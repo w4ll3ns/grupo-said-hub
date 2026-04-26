@@ -42,8 +42,8 @@ export default function Pedidos() {
   const { data: cotacoesAprovadas = [] } = useQuery({
     queryKey: ['cotacoes_aprovadas', empresaAtiva?.id],
     queryFn: async () => {
-      const { data } = await supabase.from('cotacoes').select('id, numero, fornecedor_id, valor_total, fornecedores(razao_social)').eq('empresa_id', empresaAtiva!.id).eq('status', 'aprovada').order('numero');
-      return data || [];
+      const { data } = await supabase.from('cotacoes').select('id, numero, fornecedor_id, valor_total, fornecedores(razao_social), pedidos_compra(id, status)').eq('empresa_id', empresaAtiva!.id).eq('status', 'aprovada').order('numero');
+      return (data || []).filter((c: any) => !(c.pedidos_compra || []).some((p: any) => p.status !== 'cancelado'));
     },
     enabled: !!empresaAtiva,
   });
