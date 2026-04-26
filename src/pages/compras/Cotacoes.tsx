@@ -20,7 +20,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Search, CalendarIcon, CheckCircle, XCircle, Eye, GitCompare, Trash2, UserPlus } from 'lucide-react';
+import { Plus, Search, CalendarIcon, CheckCircle, XCircle, Eye, GitCompare, Trash2, UserPlus, ChevronDown, ChevronRight, FileText, Info } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 
 const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
@@ -170,11 +172,16 @@ export default function Cotacoes() {
   // Pré-seleciona SC se vier por query param
   useEffect(() => {
     const sc = searchParams.get('sc');
+    const addForn = searchParams.get('addForn');
     if (sc && !open) {
       form.setValue('solicitacao_id', sc);
       setOpen(true);
-      // limpa o param para não reabrir
       searchParams.delete('sc');
+      setSearchParams(searchParams, { replace: true });
+    }
+    if (addForn) {
+      setAddFornecedorScId(addForn);
+      searchParams.delete('addForn');
       setSearchParams(searchParams, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -232,6 +239,7 @@ export default function Cotacoes() {
       qc.invalidateQueries({ queryKey: ['solicitacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
+      qc.invalidateQueries({ queryKey: ['fornecedores_ja_cotados'] });
       toast.success('Mapa de cotação salvo');
       handleClose();
     },
@@ -277,8 +285,35 @@ export default function Cotacoes() {
 
   const filtered = cotacoes.filter((c: any) =>
     `COT-${c.numero}`.toLowerCase().includes(search.toLowerCase()) ||
-    (c.fornecedores?.razao_social || '').toLowerCase().includes(search.toLowerCase())
+    (c.fornecedores?.razao_social || '').toLowerCase().includes(search.toLowerCase()) ||
+    `SC-${c.solicitacoes_compra?.numero}`.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Agrupa cotações por SC para visão "mapa"
+  const mapasPorSC = useMemo(() => {
+    const groups = new Map<string, { sc_id: string; sc_numero: number; cotacoes: any[]; menorTotal: number; temPedido: boolean }>();
+    filtered.forEach((c: any) => {
+      const key = c.solicitacao_id;
+      if (!key) return;
+      let g = groups.get(key);
+      if (!g) {
+        g = { sc_id: key, sc_numero: c.solicitacoes_compra?.numero ?? 0, cotacoes: [], menorTotal: Infinity, temPedido: false };
+        groups.set(key, g);
+      }
+      g.cotacoes.push(c);
+      const total = Number(c.valor_total) || 0;
+      if ((c.cotacao_itens || []).length > 0 && total > 0 && total < g.menorTotal) g.menorTotal = total;
+      if ((c.pedidos_compra || []).some((p: any) => p.status !== 'cancelado')) g.temPedido = true;
+    });
+    return Array.from(groups.values()).sort((a, b) => b.sc_numero - a.sc_numero);
+  }, [filtered]);
+
+  const [expandedSCs, setExpandedSCs] = useState<Set<string>>(new Set());
+  const toggleSC = (id: string) => setExpandedSCs((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   // Resumo do mapa em construção
   const watchedFornecedores = useWatch({ control: form.control, name: 'fornecedores' }) || [];
@@ -288,6 +323,23 @@ export default function Cotacoes() {
   const totaisFiltrados = totaisPorFornecedor.filter(t => t > 0);
   const menorTotal = totaisFiltrados.length ? Math.min(...totaisFiltrados) : 0;
   const maiorTotal = totaisFiltrados.length ? Math.max(...totaisFiltrados) : 0;
+
+  // Fornecedores que JÁ têm cotação pendente para a SC selecionada (evita duplicidade)
+  const { data: fornecedoresJaCotados = [] } = useQuery({
+    queryKey: ['fornecedores_ja_cotados', watchedSolId],
+    queryFn: async () => {
+      if (!watchedSolId) return [];
+      const { data } = await supabase
+        .from('cotacoes')
+        .select('fornecedor_id, fornecedores(razao_social)')
+        .eq('solicitacao_id', watchedSolId)
+        .eq('status', 'pendente');
+      return data || [];
+    },
+    enabled: !!watchedSolId,
+  });
+  const idsJaCotados = useMemo(() => new Set(fornecedoresJaCotados.map((f: any) => f.fornecedor_id)), [fornecedoresJaCotados]);
+  const nomesJaCotados = fornecedoresJaCotados.map((f: any) => f.fornecedores?.razao_social).filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -306,71 +358,100 @@ export default function Cotacoes() {
 
       {isLoading ? (
         <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>
+      ) : mapasPorSC.length === 0 ? (
+        <div className="rounded-md border p-8 text-center text-muted-foreground">Nenhum mapa de cotação encontrado</div>
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Número</TableHead>
-                <TableHead>Solicitação</TableHead>
-                <TableHead>Fornecedor</TableHead>
-                <TableHead>Itens</TableHead>
-                <TableHead>Valor Total</TableHead>
-                <TableHead>Validade</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Pedido</TableHead>
-                <TableHead className="w-[200px]">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nenhuma cotação encontrada</TableCell></TableRow>
-              ) : filtered.map((c: any) => {
-                const sc = statusConfig[c.status] || statusConfig.pendente;
-                const itensCount = (c.cotacao_itens || []).length;
-                const pedido = (c.pedidos_compra || []).find((p: any) => p.status !== 'cancelado');
-                const scTemPedido = filtered.some((x: any) =>
-                  x.solicitacao_id === c.solicitacao_id &&
-                  (x.pedidos_compra || []).some((p: any) => p.status !== 'cancelado')
-                );
-                return (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-medium">COT-{c.numero}</TableCell>
-                    <TableCell>
-                      <button
-                        onClick={() => c.solicitacao_id && navigate(`/compras/cotacoes/comparativo/${c.solicitacao_id}`)}
-                        className="text-primary hover:underline"
-                        title="Comparar cotações desta solicitação"
-                      >SC-{c.solicitacoes_compra?.numero}</button>
-                    </TableCell>
-                    <TableCell>{c.fornecedores?.razao_social}</TableCell>
-                    <TableCell>{itensCount > 0 ? `${itensCount} ${itensCount === 1 ? 'item' : 'itens'}` : '—'}</TableCell>
-                    <TableCell>{formatBRL(c.valor_total)}</TableCell>
-                    <TableCell>{c.data_validade ? formatDate(c.data_validade) : '—'}</TableCell>
-                    <TableCell><Badge variant={sc.variant}>{sc.label}</Badge></TableCell>
-                    <TableCell>{pedido ? <Badge variant="default">PED-{pedido.numero}</Badge> : '—'}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {itensCount > 0 && (
-                          <Button variant="ghost" size="icon" onClick={() => openItens(c)} title="Ver itens"><Eye className="h-4 w-4" /></Button>
+        <div className="space-y-3">
+          {mapasPorSC.map((grupo) => {
+            const isOpen = expandedSCs.has(grupo.sc_id);
+            const fornecedoresCount = grupo.cotacoes.length;
+            const aprovada = grupo.cotacoes.find((c: any) => c.status === 'aprovada');
+            const statusLabel = grupo.temPedido
+              ? 'Pedido emitido'
+              : aprovada ? 'Cotação aprovada' : 'Em cotação';
+            const statusColor = grupo.temPedido || aprovada ? 'default' : 'outline';
+            return (
+              <Collapsible key={grupo.sc_id} open={isOpen} onOpenChange={() => toggleSC(grupo.sc_id)}>
+                <div className="rounded-md border bg-card">
+                  <CollapsibleTrigger className="w-full p-4 flex items-center gap-3 hover:bg-muted/50 transition-colors text-left">
+                    {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      <span className="font-semibold text-base">SC-{grupo.sc_numero}</span>
+                      <span className="text-muted-foreground">
+                        {fornecedoresCount} {fornecedoresCount === 1 ? 'fornecedor cotado' : 'fornecedores cotados'}
+                      </span>
+                      {grupo.menorTotal !== Infinity && (
+                        <span className="text-muted-foreground">
+                          Menor: <strong className="text-foreground">{formatBRL(grupo.menorTotal)}</strong>
+                        </span>
+                      )}
+                      <Badge variant={statusColor as any}>{statusLabel}</Badge>
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="border-t">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Cotação</TableHead>
+                            <TableHead>Fornecedor</TableHead>
+                            <TableHead>Itens</TableHead>
+                            <TableHead>Valor Total</TableHead>
+                            <TableHead>Validade</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Pedido</TableHead>
+                            <TableHead className="w-[180px]">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {grupo.cotacoes.map((c: any) => {
+                            const sc = statusConfig[c.status] || statusConfig.pendente;
+                            const itensCount = (c.cotacao_itens || []).length;
+                            const pedido = (c.pedidos_compra || []).find((p: any) => p.status !== 'cancelado');
+                            return (
+                              <TableRow key={c.id}>
+                                <TableCell className="font-medium">COT-{c.numero}</TableCell>
+                                <TableCell>{c.fornecedores?.razao_social}</TableCell>
+                                <TableCell>{itensCount > 0 ? `${itensCount} ${itensCount === 1 ? 'item' : 'itens'}` : '—'}</TableCell>
+                                <TableCell>{formatBRL(c.valor_total)}</TableCell>
+                                <TableCell>{c.data_validade ? formatDate(c.data_validade) : '—'}</TableCell>
+                                <TableCell><Badge variant={sc.variant}>{sc.label}</Badge></TableCell>
+                                <TableCell>{pedido ? <Badge variant="default">PED-{pedido.numero}</Badge> : '—'}</TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1">
+                                    {itensCount > 0 && (
+                                      <Button variant="ghost" size="icon" onClick={() => openItens(c)} title="Ver itens"><Eye className="h-4 w-4" /></Button>
+                                    )}
+                                    {c.status === 'pendente' && canApproveCompras && !pedido && (
+                                      <>
+                                        <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
+                                        <Button variant="ghost" size="icon" onClick={() => rejeitarMutation.mutate(c.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                      <div className="p-3 flex flex-wrap gap-2 border-t bg-muted/20">
+                        {!grupo.temPedido && (
+                          <Button variant="outline" size="sm" onClick={() => setAddFornecedorScId(grupo.sc_id)}>
+                            <UserPlus className="mr-2 h-4 w-4" /> Adicionar fornecedor ao mapa
+                          </Button>
                         )}
-                        <Button variant="ghost" size="icon" onClick={() => navigate(`/compras/cotacoes/comparativo/${c.solicitacao_id}`)} title="Comparativo"><GitCompare className="h-4 w-4" /></Button>
-                        {!scTemPedido && (
-                          <Button variant="ghost" size="icon" onClick={() => setAddFornecedorScId(c.solicitacao_id)} title="Adicionar outro fornecedor a esta SC"><UserPlus className="h-4 w-4" /></Button>
-                        )}
-                        {c.status === 'pendente' && canApproveCompras && !pedido && (
-                          <>
-                            <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => rejeitarMutation.mutate(c.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
-                          </>
-                        )}
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/compras/cotacoes/comparativo/${grupo.sc_id}`)}>
+                          <GitCompare className="mr-2 h-4 w-4" /> Abrir mapa comparativo
+                        </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            );
+          })}
         </div>
       )}
 
@@ -418,7 +499,7 @@ export default function Cotacoes() {
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo Mapa de Cotação</DialogTitle>
+            <DialogTitle>{nomesJaCotados.length > 0 ? 'Adicionar ao Mapa de Cotação' : 'Novo Mapa de Cotação'}</DialogTitle>
             <DialogDescription>Selecione a solicitação e adicione propostas de um ou mais fornecedores.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -433,6 +514,15 @@ export default function Cotacoes() {
                   <FormMessage />
                 </FormItem>
               )} />
+
+              {watchedSolId && nomesJaCotados.length > 0 && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Esta SC já tem {nomesJaCotados.length} {nomesJaCotados.length === 1 ? 'proposta cotada' : 'propostas cotadas'} ({nomesJaCotados.join(', ')}). Você pode adicionar novos fornecedores ao mapa existente — os já cotados ficam indisponíveis abaixo.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {watchedSolId && (
                 <>
@@ -478,9 +568,12 @@ export default function Cotacoes() {
                                     <SelectContent>
                                       {fornecedores.map((f: any) => {
                                         const jaUsado = watchedFornecedores.some((wf: any, i: number) => i !== fIdx && wf?.fornecedor_id === f.id);
+                                        const jaCotado = idsJaCotados.has(f.id);
+                                        const disabled = jaUsado || jaCotado;
+                                        const sufixo = jaCotado ? ' (já cotou esta SC)' : jaUsado ? ' (já no mapa)' : '';
                                         return (
-                                          <SelectItem key={f.id} value={f.id} disabled={jaUsado}>
-                                            {f.razao_social}{jaUsado ? ' (já no mapa)' : ''}
+                                          <SelectItem key={f.id} value={f.id} disabled={disabled}>
+                                            {f.razao_social}{sufixo}
                                           </SelectItem>
                                         );
                                       })}
@@ -575,7 +668,7 @@ export default function Cotacoes() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
                 <Button type="submit" disabled={saveMutation.isPending || fornecedorFields.length === 0}>
-                  {saveMutation.isPending ? 'Salvando...' : 'Salvar Mapa de Cotação'}
+                  {saveMutation.isPending ? 'Salvando...' : nomesJaCotados.length > 0 ? 'Adicionar ao Mapa' : 'Criar Mapa'}
                 </Button>
               </DialogFooter>
             </form>
@@ -591,6 +684,7 @@ export default function Cotacoes() {
         onClose={() => setAddFornecedorScId(null)}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ['cotacoes'] });
+          qc.invalidateQueries({ queryKey: ['fornecedores_ja_cotados'] });
           setAddFornecedorScId(null);
         }}
       />
@@ -615,6 +709,21 @@ function AddFornecedorDialog({
     defaultValues: { fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] },
   });
   const watchedItens = form.watch('itens');
+
+  const { data: jaCotados = [] } = useQuery({
+    queryKey: ['fornecedores_ja_cotados', scId],
+    queryFn: async () => {
+      if (!scId) return [];
+      const { data } = await supabase
+        .from('cotacoes')
+        .select('fornecedor_id')
+        .eq('solicitacao_id', scId)
+        .eq('status', 'pendente');
+      return data || [];
+    },
+    enabled: !!scId,
+  });
+  const idsJaCotados = useMemo(() => new Set(jaCotados.map((f: any) => f.fornecedor_id)), [jaCotados]);
 
   useEffect(() => {
     if (!scId) { form.reset({ fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] }); return; }
@@ -674,7 +783,16 @@ function AddFornecedorDialog({
                   <FormLabel>Fornecedor *</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                    <SelectContent>{fornecedores.map((f: any) => <SelectItem key={f.id} value={f.id}>{f.razao_social}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {fornecedores.map((f: any) => {
+                        const jaCotado = idsJaCotados.has(f.id);
+                        return (
+                          <SelectItem key={f.id} value={f.id} disabled={jaCotado}>
+                            {f.razao_social}{jaCotado ? ' (já cotou esta SC)' : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
                   </Select>
                   <FormMessage />
                 </FormItem>
