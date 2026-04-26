@@ -1,99 +1,78 @@
-## 🎯 Objetivo
+## 🎯 Problema observado
 
-Substituir o fluxo atual ("uma cotação por vez, um fornecedor por vez") por um **Mapa de Cotação** unificado: o usuário seleciona a SC **uma única vez**, adiciona **N fornecedores** e seus respectivos preços por item, e salva tudo em uma só operação.
+Você tentou criar um "Novo Mapa de Cotação" para a **SC-2**, mas ela já tinha a **COT-2 (Materiais ABC, R$ 373)** pendente. A RPC bloqueou corretamente (não pode haver 2 propostas pendentes do mesmo fornecedor para a mesma SC), mas a interface não deixou isso claro **antes** de você preencher o form.
 
-## 🧠 Decisão de arquitetura
+Além disso, ficou ambíguo "onde fica o mapa": fisicamente são as N linhas de `cotacoes` da mesma SC, mas a UI não mostra isso de forma agregada na listagem.
 
-**Mantemos o schema atual** (1 registro `cotacoes` por fornecedor + `cotacao_itens`). Mudamos apenas a **UX de entrada** e adicionamos **uma RPC bulk** que cria várias cotações de uma vez atomicamente.
+## 🧠 Decisão
 
-**Por quê:**
-- O comparativo (`CotacoesComparativo.tsx`), os triggers (`recalc_cotacao_valor_total`, `protect_cotacao_with_pedido`), e as RPCs (`aprovar_cotacao`, `gerar_pedido_compra`) continuam funcionando sem mudanças.
-- O pedido sempre vai para **um único fornecedor**, então `pedidos_compra.cotacao_id` (apontando para a proposta vencedora) continua semanticamente correto.
-- Cada proposta de fornecedor mantém seu próprio status (`pendente`/`aprovada`/`rejeitada`), histórico, validade e condições — necessário para auditoria.
-- Zero migration destrutiva, zero retrabalho do que foi feito nas Sprints 1 e 2.
+**Mantemos o schema** (continua sendo 1 `cotacoes` por fornecedor). Vamos apenas:
 
-## 🗄️ Backend (1 migration)
+1. Tornar o conceito de "Mapa" visível na **listagem `/compras/cotacoes`**.
+2. Deixar o dialog **ciente do que já existe** para a SC selecionada.
+3. Reaproveitar a tela de **Comparativo** como "página do mapa".
 
-### Nova RPC `salvar_mapa_cotacao(_solicitacao_id, _empresa_id, _fornecedores jsonb)`
+## 🎨 Mudanças de UX
 
-Recebe um array JSONB onde cada elemento representa **um fornecedor com seus itens precificados**:
-```json
-[
-  {
-    "fornecedor_id": "uuid",
-    "data_validade": "2026-05-15",
-    "condicao_pagamento": "30 dias",
-    "prazo_entrega": "5 dias úteis",
-    "observacoes": "...",
-    "itens": [
-      { "solicitacao_item_id": "uuid", "quantidade": 10, "valor_unitario": 25.50 },
-      ...
-    ]
-  },
-  ...
-]
+### 1. Listagem `/compras/cotacoes` — agrupar por SC
+
+Em vez de uma tabela "flat" com cada cotação solta, exibir **uma linha por SC** (collapsible):
+
+```
+▸ SC-2  •  3 itens  •  1 fornecedor cotado  •  Menor: R$ 373  •  Status: Em cotação
+   └─ COT-2  Materiais ABC Ltda  R$ 373  [pendente]  [👁 itens] [✏️ editar] [🗑]
+   └─ [+ Adicionar fornecedor ao mapa]   [📊 Abrir comparativo]
+
+▸ SC-1  •  ...  •  1 fornecedor  •  R$ 3.500  •  Status: Concluída
+   └─ COT-1  Materiais ABC Ltda  R$ 3.500  [aprovada]  → Pedido #1 (entregue)
 ```
 
-**Comportamento (transacional):**
-1. Valida permissão (`compras.cotacoes.criar`) e empresa.
-2. Valida que a SC existe e está em status `aprovada` ou `cotacao`.
-3. Valida que cada fornecedor tem ≥1 item com `valor_unitario > 0`.
-4. Bloqueia duplicidade: se já existir cotação **pendente** do mesmo fornecedor para esta SC, retorna erro claro (`Fornecedor X já possui cotação pendente nesta solicitação`).
-5. Para cada fornecedor no array, internamente reusa a lógica de `salvar_cotacao_com_itens` (insere `cotacoes` + `cotacao_itens`; o trigger já recalcula `valor_total`).
-6. Garante que a SC avança para `cotacao` se estava em `aprovada`.
-7. Retorna array de IDs criados.
+Vantagem: você vê de imediato **quantos fornecedores já cotaram** cada SC e o que falta.
 
-**Vantagem chave:** atômica — se 1 fornecedor falhar (validação, etc), nenhuma cotação é criada.
+### 2. Dialog "Novo Mapa de Cotação" — ciente do estado da SC
 
-> A RPC `salvar_cotacao_com_itens` continua existindo para o caso de **adicionar mais um fornecedor depois** (ver fluxo abaixo).
+Quando o usuário seleciona uma SC que **já tem propostas pendentes**, o dialog muda de modo:
 
-## 🎨 Frontend
+- **Banner no topo:** *"Esta SC já tem 1 proposta cotada (Materiais ABC). Você pode adicionar novos fornecedores ao mapa existente."*
+- O **select de fornecedor** dentro de cada card passa a **ocultar (ou desabilitar com badge "já cotou")** os fornecedores que já têm cotação pendente nesta SC.
+- O título do botão muda para **"Adicionar ao Mapa"** quando já existem propostas, ou **"Criar Mapa"** quando é a primeira.
 
-### 1. `Cotacoes.tsx` — Refatorar dialog "Nova Cotação" → "Novo Mapa de Cotação"
+Isso elimina o erro 400 que você bateu — o usuário nunca consegue selecionar um fornecedor duplicado.
 
-**Novo layout do dialog:**
-- **Topo:** seleção da SC (1x) + carregamento automático dos itens da SC.
-- **Seção "Fornecedores"**: lista de cards/abas, cada uma representando um fornecedor.
-  - Botão **"+ Adicionar fornecedor"** abre um novo card.
-  - Cada card contém: select de fornecedor, validade, condição de pagamento, prazo de entrega, observações, e a **mesma tabela de itens** (com os itens da SC já carregados, faltando preencher `valor_unitario`).
-  - Botão **"× Remover fornecedor"** em cada card (mín. 1).
-- **Rodapé do dialog:** mostra resumo "**3 fornecedores** • Menor total: R$ 4.250,00 • Maior total: R$ 5.100,00".
-- **Botão "Salvar Mapa de Cotação"** chama a nova RPC `salvar_mapa_cotacao`.
+### 3. Botão "Editar mapa" → abre dialog em modo edição
 
-**Validações no form (Zod):**
-- Mín. 1 fornecedor.
-- Cada fornecedor com mín. 1 item, todos com `valor_unitario > 0`.
-- Não permitir o mesmo `fornecedor_id` duas vezes no mesmo mapa (UI bloqueia + RPC valida).
+Para cotações **pendentes**, permitir reabrir o card de uma proposta específica e ajustar preços/condições. Reaproveitamos `salvar_cotacao_com_itens` (que já faz upsert) — sem migration.
 
-**Estado do form:** estrutura aninhada `{ solicitacao_id, fornecedores: [{ fornecedor_id, ..., itens: [...] }] }` usando `useFieldArray` aninhado.
+> Cotações **aprovadas/rejeitadas** ou já vinculadas a um pedido continuam **read-only** (proteção que já existe).
 
-### 2. Listagem de cotações — Agrupamento visual por SC
+### 4. Renomear/reposicionar o botão "Adicionar fornecedor"
 
-Hoje a tabela mostra cada `cotacoes` como linha solta. Vamos manter, mas adicionar:
-- **Botão "Adicionar fornecedor"** ao lado de cada SC (visível para SCs em `cotacao` que ainda não tenham pedido) → abre um dialog menor reusando `salvar_cotacao_com_itens` para incluir UM novo fornecedor sem refazer todo o mapa.
-- O link da SC já leva ao `Comparativo` (já implementado), que continua sendo a visão consolidada.
+O `UserPlus` por linha que existe hoje passa a ficar **dentro do grupo da SC** (item 1), com label claro **"Adicionar fornecedor ao mapa"**, em vez de ícone solto fácil de não perceber.
 
-### 3. `Solicitacoes.tsx` — Botão "Cotar" muda para "Abrir Mapa de Cotação"
+### 5. Comparativo = "Página do Mapa"
 
-Quando a SC está em `aprovada` ou `cotacao`, o botão leva direto para `/compras/cotacoes` com a SC pré-selecionada e o dialog aberto (via query param `?sc=<id>`).
+Renomear o título da tela `/compras/cotacoes/comparativo/:id` de "Comparativo de Cotações" para **"Mapa de Cotação — SC-X"**, deixando explícito que aquela é a visão consolidada do mapa. Adicionar no topo:
 
-### 4. `CotacoesComparativo.tsx` — sem mudança estrutural
+- Botão **"+ Adicionar fornecedor"** (mesmo dialog de adição individual).
+- Resumo: *"3 fornecedores cotados • Menor total: R$ X • Diferença: Y%"*.
 
-Continua funcionando exatamente como está, pois consome `cotacoes` + `cotacao_itens` agrupados por SC. Apenas se beneficia de ter mais propostas para comparar.
+## 🗄️ Backend
 
-## 🧪 Verificação pós-implementação
+**Nenhuma migration nova.** A RPC `salvar_mapa_cotacao` já cobre o caso. Apenas o frontend precisa ler **antes** de abrir o dialog quais fornecedores já cotaram a SC selecionada (query simples em `cotacoes` por `solicitacao_id` + `status='pendente'`).
 
-1. Criar SC-3 com 3 itens → aprovar.
-2. Em /compras/cotacoes → "Novo Mapa de Cotação" → selecionar SC-3 → adicionar 3 fornecedores com preços diferentes → salvar.
-3. Confirmar que aparecem 3 linhas COT-X, COT-Y, COT-Z na tabela, todas vinculadas à SC-3.
-4. Abrir Comparativo da SC-3 → verificar lado a lado e badges de menor preço.
-5. Aprovar uma → confirmar que as outras 2 viram `rejeitada` automaticamente (RPC `aprovar_cotacao` já faz isso).
-6. Tentar adicionar fornecedor duplicado → deve falhar com mensagem clara.
+## 🧪 Verificação
+
+1. Em `/compras/cotacoes`, a SC-2 aparece como linha agrupada mostrando "1 fornecedor cotado".
+2. Expandir a SC-2 → ver COT-2 + botões "Adicionar fornecedor" / "Abrir comparativo".
+3. Clicar em "Novo Mapa de Cotação" e selecionar SC-2 → banner aparece, Materiais ABC fica indisponível no select.
+4. Adicionar um 2º fornecedor (ex: criar "Construfácil" antes) → salvar → ver SC-2 agora com "2 fornecedores cotados".
+5. Abrir comparativo → ver os 2 lado a lado com badges de menor preço.
+6. Tentar editar a COT-2 (pendente) → dialog reabre com os preços atuais, salvar funciona.
 7. `npx tsc --noEmit` limpo.
 
 ## 📌 O que **não** muda
 
-- Schema das tabelas `cotacoes`, `cotacao_itens`, `pedidos_compra`.
-- RPCs `aprovar_cotacao`, `gerar_pedido_compra`, `concluir_pedido`.
-- Triggers de proteção e recálculo.
-- Numeração sequencial COT-N (cada fornecedor ainda recebe seu número, o que é correto para rastreabilidade).
+- Schema (`cotacoes`, `cotacao_itens`, `pedidos_compra`).
+- RPCs `salvar_mapa_cotacao`, `salvar_cotacao_com_itens`, `aprovar_cotacao`, `gerar_pedido_compra`.
+- Numeração COT-N por fornecedor (correto para auditoria).
+- Tela de Comparativo (apenas ganha título e botão de adicionar).
