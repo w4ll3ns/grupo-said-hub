@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useEmpresa } from '@/hooks/useEmpresa';
@@ -80,6 +81,7 @@ type Lancamento = {
   plano_despesa_id: string | null;
   observacoes: string | null;
   nota_fiscal_url: string | null;
+  pedido_compra_id: string | null;
 };
 
 const formatBRL = (v: number) =>
