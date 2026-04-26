@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useEmpresa } from '@/hooks/useEmpresa';
@@ -20,7 +21,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2, Paperclip, FileText, X } from 'lucide-react';
+import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2, Paperclip, FileText, X, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSignedUrl } from '@/lib/storage';
 
@@ -80,6 +81,7 @@ type Lancamento = {
   plano_despesa_id: string | null;
   observacoes: string | null;
   nota_fiscal_url: string | null;
+  pedido_compra_id: string | null;
 };
 
 const formatBRL = (v: number) =>
@@ -106,6 +108,9 @@ interface LancamentosPageProps {
 export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPageProps) {
   const { empresaAtiva } = useEmpresa();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const pedidoFilter = tipo === 'pagar' ? searchParams.get('pedido') : null;
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
   const [search, setSearch] = useState('');
@@ -126,19 +131,39 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
   });
 
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ['lancamentos', empresaAtiva?.id, tipo],
+    queryKey: ['lancamentos', empresaAtiva?.id, tipo, pedidoFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('lancamentos')
         .select('*')
         .eq('empresa_id', empresaAtiva!.id)
         .eq('tipo', tipo)
         .order('data_vencimento', { ascending: false });
+      if (pedidoFilter) q = q.eq('pedido_compra_id', pedidoFilter);
+      const { data, error } = await q;
       if (error) throw error;
       return data as unknown as Lancamento[];
     },
     enabled: !!empresaAtiva,
   });
+
+  // Mapa pedido_compra_id -> numero, para exibir badge "PED-N"
+  const { data: pedidosMap = {} } = useQuery({
+    queryKey: ['pedidos_numeros', empresaAtiva?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('pedidos_compra')
+        .select('id, numero')
+        .eq('empresa_id', empresaAtiva!.id);
+      const map: Record<string, number> = {};
+      (data || []).forEach((p: any) => { map[p.id] = p.numero; });
+      return map;
+    },
+    enabled: !!empresaAtiva && tipo === 'pagar',
+  });
+
+  // Info do pedido em filtro ativo
+  const filtroPedidoNumero = pedidoFilter ? pedidosMap[pedidoFilter] : undefined;
 
   const { data: contasBancarias = [] } = useQuery({
     queryKey: ['contas_bancarias', empresaAtiva?.id],
@@ -319,6 +344,20 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
         </div>
       )}
 
+      {pedidoFilter && (
+        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <Receipt className="h-4 w-4 text-primary" />
+          <span>Filtrando por <strong>PED-{filtroPedidoNumero ?? '?'}</strong></span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7"
+            onClick={() => { searchParams.delete('pedido'); setSearchParams(searchParams); }}
+          >
+            Limpar filtro
+          </Button>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -357,6 +396,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                 <TableHead>Categoria</TableHead>
                 <TableHead>Conta</TableHead>
                 <TableHead>Centro Custo</TableHead>
+                {tipo === 'pagar' && <TableHead>Origem</TableHead>}
                 <TableHead>NF</TableHead>
                 <TableHead className="w-[120px]">Ações</TableHead>
               </TableRow>
@@ -364,7 +404,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={tipo === 'pagar' ? 10 : 9} className="text-center text-muted-foreground py-8">
                     Nenhum lançamento encontrado
                   </TableCell>
                 </TableRow>
@@ -403,6 +443,22 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                       <TableCell className="text-sm text-muted-foreground">
                         {ccNome || '—'}
                       </TableCell>
+                      {tipo === 'pagar' && (
+                        <TableCell className="text-sm">
+                          {item.pedido_compra_id ? (
+                            <button
+                              onClick={() => navigate('/compras/pedidos')}
+                              className="text-primary hover:underline inline-flex items-center gap-1"
+                              title="Ver pedido de compra"
+                            >
+                              <Receipt className="h-3 w-3" />
+                              PED-{pedidosMap[item.pedido_compra_id] ?? '?'}
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <NotaFiscalLink path={item.nota_fiscal_url} />
                       </TableCell>

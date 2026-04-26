@@ -502,6 +502,7 @@ export type Database = {
           id: string
           nota_fiscal_url: string | null
           observacoes: string | null
+          pedido_compra_id: string | null
           plano_despesa_id: string | null
           plano_receita_id: string | null
           status: string
@@ -523,6 +524,7 @@ export type Database = {
           id?: string
           nota_fiscal_url?: string | null
           observacoes?: string | null
+          pedido_compra_id?: string | null
           plano_despesa_id?: string | null
           plano_receita_id?: string | null
           status?: string
@@ -544,6 +546,7 @@ export type Database = {
           id?: string
           nota_fiscal_url?: string | null
           observacoes?: string | null
+          pedido_compra_id?: string | null
           plano_despesa_id?: string | null
           plano_receita_id?: string | null
           status?: string
@@ -1677,6 +1680,18 @@ export type Database = {
       estornar_transferencia: {
         Args: { _motivo?: string; _transferencia_id: string }
         Returns: string
+      }
+      gerar_contas_pagar_pedido: {
+        Args: {
+          _centro_custo_id?: string
+          _conta_bancaria_id?: string
+          _forma_pagamento_id?: string
+          _observacoes?: string
+          _parcelas: Json
+          _pedido_id: string
+          _plano_despesa_id: string
+        }
+        Returns: string[]
       }
       gerar_pedido_compra: {
         Args: {
