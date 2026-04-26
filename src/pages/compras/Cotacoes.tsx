@@ -88,6 +88,8 @@ export default function Cotacoes() {
       return data || [];
     },
     enabled: !!empresaAtiva,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
   const { data: fornecedores = [] } = useQuery({

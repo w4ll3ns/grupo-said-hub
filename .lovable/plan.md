@@ -1,68 +1,44 @@
-# Sprint Compras Etapa 2 — Itens de cotação + Comparativo
+## 🐞 Diagnóstico
 
-## Contexto
-Sprint 1 fechou as transições de status (SC ↔ COT ↔ PED). Restaram 3 furos do diagnóstico original:
+A SC-2 **existe e está corretamente `aprovada`** no banco (verificado via SQL), e o filtro do select em `Cotacoes.tsx` busca status `aprovada` e `cotacao` — então a lógica está certa.
 
-- **#9 Itens da cotação**: tabela `cotacao_itens` existe e está vazia. Hoje o comprador digita só um `valor_total` "no escuro", sem rastro item-a-item. Não dá para auditar nem comparar.
-- **#10 Comparativo de cotações**: sem tela para colocar 2+ cotações da mesma SC lado a lado. Aprovação é palpite.
-- **#11 Integração com Financeiro** (pedido entregue → contas a pagar): fica para Sprint 3 — exige decisão sobre centro de custo / plano de contas / conta default.
+O problema é **invalidação de cache do React Query**:
 
-Esta sprint resolve **#9 e #10**.
+- A query do select usa `queryKey: ['solicitacoes_aprovadas', empresaAtiva?.id]` (linha 85 de `Cotacoes.tsx`).
+- **Nenhuma mutation no projeto invalida essa chave.** As mutations de aprovação em `Solicitacoes.tsx` invalidam apenas `['solicitacoes_compra']`, e o `saveMutation` em `Cotacoes.tsx` também não toca em `solicitacoes_aprovadas`.
+- Resultado: depois de aprovar a SC-2, a tela de Cotações continua exibindo o cache antigo (sem a SC-2) até expirar o stale time padrão ou o usuário recarregar a página.
 
----
+Há também o caso espelhado em `Pedidos.tsx`: a query `['cotacoes_aprovadas']` é invalidada no `gerarPedidoMutation`, mas não quando uma cotação é aprovada em `Cotacoes.tsx` (a `aprovarMutation` na linha 157 já invalida `['cotacoes_aprovadas']` ✅, então esse caminho está ok). Vamos garantir consistência.
 
-## Escopo
+## ✅ Correções (1 arquivo)
 
-### 1. Refatorar criação/edição de cotação para incluir itens
+### `src/pages/compras/Cotacoes.tsx`
 
-**`src/pages/compras/Cotacoes.tsx`** — ao escolher a SC no form:
-- Carregar automaticamente os `solicitacao_itens` da SC.
-- Tabela editável: descrição/quantidade/unidade vindos da SC (read-only) + **valor unitário** (input) + total da linha calculado.
-- `valor_total` da cotação = soma das linhas (read-only). Remover input manual.
-- Validação: todos os itens precisam ter unitário > 0.
+1. **`saveMutation.onSuccess`** (criar cotação) — adicionar:
+   ```ts
+   qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
+   ```
+   (Para que a SC saia da lista quando virar `cotacao`.)
 
-**Persistência**: nova RPC `salvar_cotacao_com_itens(_cotacao jsonb, _itens jsonb)`:
-- INSERT em `cotacoes` + bulk INSERT em `cotacao_itens` numa transação.
-- Em edição: UPDATE da cotação + DELETE/INSERT dos itens — só permitido se status = `pendente`.
-- `SECURITY DEFINER`, valida permissão `compras.cotacoes.criar`/`editar` e empresa do usuário.
+### `src/pages/compras/Solicitacoes.tsx`
 
-### 2. Tela de comparativo de cotações
+2. **`approveMutation.onSuccess`** (aprovar/rejeitar SC) — adicionar:
+   ```ts
+   qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
+   ```
+   (Para que a SC recém-aprovada apareça imediatamente em Cotações sem refresh.)
 
-Nova rota **`/compras/cotacoes/comparativo/:solicitacaoId`** acessada por:
-- Botão "Comparar cotações" em SCs com status `cotacao` em `Solicitacoes.tsx`.
-- Botão equivalente na listagem de Cotações.
+### Bonus de robustez (opcional mas recomendado)
 
-**Layout** (`src/pages/compras/CotacoesComparativo.tsx`):
-- Header: número e descrição da SC + voltar.
-- Tabela pivot: linhas = itens da SC; colunas = uma por cotação/fornecedor. Célula mostra unitário e total da linha.
-- Última linha: **total da cotação** + condição de pagamento + prazo de entrega.
-- Destaque do menor unitário por linha (verde) e badge "Menor preço total" na coluna vencedora.
-- Botão "Aprovar esta cotação" em cada coluna (chama `aprovar_cotacao` da Sprint 1), desabilitado se já houver aprovada.
-- Status da cotação visível no topo de cada coluna.
+3. Em `Cotacoes.tsx`, adicionar `refetchOnWindowFocus: true` (ou reduzir `staleTime`) na query `solicitacoes_aprovadas`, para que a lista atualize ao voltar para a aba — defesa em profundidade caso outro fluxo futuro mude o status sem invalidar o cache.
 
-### 3. Ajustes complementares
+## 🧪 Verificação pós-correção
 
-- **Listagem de cotações**: coluna "Itens" com contagem.
-- **"Ver itens"**: dialog ou linha expansível na listagem.
-- **Gerar pedido**: dialog mostra itens herdados da cotação (read-only) para conferência.
+1. Criar SC-3 → aprovar em /compras/solicitacoes.
+2. Navegar para /compras/cotacoes → clicar "Nova Cotação" → SC-3 deve aparecer **imediatamente** no select.
+3. Salvar cotação → reabrir o dialog → SC-3 não deve mais aparecer (status virou `cotacao`, mas continua elegível ✅ — ainda aparece, correto, pois o filtro inclui `cotacao` para permitir múltiplas cotações da mesma SC).
+4. Rodar `npx tsc --noEmit` para garantir build limpo.
 
-### 4. Reconciliação
+## 📌 Sobre a SC-2 atual
 
-- COT-1 (legacy, sem itens) fica como está — pedido já entregue, SC concluída.
-- UI lida com cotações sem itens (mostra "—" e esconde "Ver itens").
-
----
-
-## Fora desta sprint
-
-- **Integração Financeiro (#11)**: vira Sprint 3.
-- **Edição de itens em cotação aprovada**: bloqueado de propósito.
-- **Anexo de proposta do fornecedor (PDF)**: pode ser próximo passo.
-
-## Detalhes técnicos
-
-- RPC recebe JSONB (cotação + array de itens) para evitar N round-trips.
-- `cotacao_itens.solicitacao_item_id` é a FK natural — não duplico descrição/quantidade.
-- Trigger novo `recalc_cotacao_valor_total` em `cotacao_itens` (AFTER INSERT/UPDATE/DELETE) mantém `cotacoes.valor_total` coerente mesmo contra edição manual via SQL.
-- Comparativo: única query com `cotacoes` + `cotacao_itens` + `solicitacao_itens` + `fornecedores` filtrado por `solicitacao_id`.
-- Tipos TS regenerados após a migration.
+Após aplicar a correção, basta **recarregar a página** uma vez (F5) para que a SC-2 apareça — não há nada de errado com os dados dela.
