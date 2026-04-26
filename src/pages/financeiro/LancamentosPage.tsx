@@ -396,6 +396,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                 <TableHead>Categoria</TableHead>
                 <TableHead>Conta</TableHead>
                 <TableHead>Centro Custo</TableHead>
+                {tipo === 'pagar' && <TableHead>Origem</TableHead>}
                 <TableHead>NF</TableHead>
                 <TableHead className="w-[120px]">Ações</TableHead>
               </TableRow>
@@ -403,7 +404,7 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={tipo === 'pagar' ? 10 : 9} className="text-center text-muted-foreground py-8">
                     Nenhum lançamento encontrado
                   </TableCell>
                 </TableRow>
