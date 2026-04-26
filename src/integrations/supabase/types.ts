@@ -1703,6 +1703,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      salvar_cotacao_com_itens: {
+        Args: { _cotacao: Json; _itens: Json }
+        Returns: string
+      }
       user_belongs_to_empresa: {
         Args: { _empresa_id: string; _user_id: string }
         Returns: boolean
