@@ -17,19 +17,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, CalendarIcon, Send, CheckCircle, XCircle, Eye, Trash2, GitCompare } from 'lucide-react';
+import { Plus, Search, CalendarIcon, Send, CheckCircle, XCircle, Eye, Trash2, GitCompare, Check, ChevronsUpDown, PackagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 const UNIDADES = ['un', 'kg', 'm', 'm²', 'm³', 'l', 'cx', 'pct', 'par', 'jg', 'vb'];
 
 const itemSchema = z.object({
+  produto_id: z.string().uuid().nullable(),
   descricao: z.string().min(1, 'Descrição é obrigatória'),
   quantidade: z.coerce.number().positive('Qtd > 0'),
   unidade: z.string().min(1),
   observacao: z.string().optional().or(z.literal('')),
+  avulso: z.boolean().optional(),
 });
 
 const schema = z.object({
@@ -42,6 +47,8 @@ const schema = z.object({
   itens: z.array(itemSchema).min(1, 'Adicione pelo menos um item'),
 });
 type FormData = z.infer<typeof schema>;
+
+type Produto = { id: string; nome: string; unidade: string; categoria: string | null };
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   rascunho: { label: 'Rascunho', variant: 'secondary' },
@@ -63,6 +70,119 @@ const prioridadeConfig: Record<string, { label: string; variant: 'default' | 'se
 
 const formatDate = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; };
 
+// ============= Mini-dialog: cadastrar produto direto da SC =============
+function NewProdutoDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (v: boolean) => void; onCreated: (p: Produto) => void }) {
+  const { empresaAtiva } = useEmpresa();
+  const qc = useQueryClient();
+  const [nome, setNome] = useState('');
+  const [unidade, setUnidade] = useState('un');
+  const [categoria, setCategoria] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const reset = () => { setNome(''); setUnidade('un'); setCategoria(''); };
+
+  const handleSave = async () => {
+    if (!nome.trim() || !empresaAtiva) return;
+    setSaving(true);
+    const { data, error } = await supabase
+      .from('produtos')
+      .insert({ empresa_id: empresaAtiva.id, nome: nome.trim(), unidade, categoria: categoria.trim() || null })
+      .select('id, nome, unidade, categoria')
+      .single();
+    setSaving(false);
+    if (error) { toast.error('Erro ao cadastrar produto'); return; }
+    qc.invalidateQueries({ queryKey: ['produtos'] });
+    toast.success('Produto cadastrado no catálogo');
+    onCreated(data as Produto);
+    reset();
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Cadastrar produto no catálogo</DialogTitle>
+          <DialogDescription>O produto fica disponível para todas as próximas solicitações.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Nome *</Label>
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Cimento CP-II 50kg" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Unidade *</Label>
+              <Select value={unidade} onValueChange={setUnidade}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{UNIDADES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Categoria</Label>
+              <Input value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Opcional" />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={!nome.trim() || saving}>{saving ? 'Salvando...' : 'Cadastrar'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============= Combobox de produto por linha de item =============
+function ProdutoCombobox({
+  value, produtos, onSelect, onAskCreate,
+}: {
+  value: string | null;
+  produtos: Produto[];
+  onSelect: (p: Produto) => void;
+  onAskCreate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = produtos.find((p) => p.id === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" role="combobox" className={cn('w-full justify-between font-normal', !selected && 'text-muted-foreground')}>
+          {selected ? selected.nome : 'Selecionar produto do catálogo...'}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Buscar por nome ou categoria..." />
+          <CommandList>
+            <CommandEmpty>Nenhum produto encontrado.</CommandEmpty>
+            <CommandGroup>
+              {produtos.map((p) => (
+                <CommandItem key={p.id} value={`${p.nome} ${p.categoria || ''}`} onSelect={() => { onSelect(p); setOpen(false); }}>
+                  <Check className={cn('mr-2 h-4 w-4', value === p.id ? 'opacity-100' : 'opacity-0')} />
+                  <div className="flex-1">
+                    <div className="text-sm">{p.nome}</div>
+                    {p.categoria && <div className="text-xs text-muted-foreground">{p.categoria} · {p.unidade}</div>}
+                    {!p.categoria && <div className="text-xs text-muted-foreground">{p.unidade}</div>}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+            <CommandGroup>
+              <CommandItem onSelect={() => { setOpen(false); onAskCreate(); }}>
+                <PackagePlus className="mr-2 h-4 w-4 text-primary" />
+                <span className="text-primary font-medium">Cadastrar novo produto…</span>
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function Solicitacoes() {
   const navigate = useNavigate();
   const { empresaAtiva } = useEmpresa();
@@ -75,12 +195,14 @@ export default function Solicitacoes() {
   const [viewItem, setViewItem] = useState<any>(null);
   const [rejectDialog, setRejectDialog] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [newProdutoOpen, setNewProdutoOpen] = useState(false);
+  const [newProdutoForIndex, setNewProdutoForIndex] = useState<number | null>(null);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { prioridade: 'media', justificativa: '', observacoes: '', obra_id: '', centro_custo_id: '', itens: [{ descricao: '', quantidade: 1, unidade: 'un', observacao: '' }] },
+    defaultValues: { prioridade: 'media', justificativa: '', observacoes: '', obra_id: '', centro_custo_id: '', itens: [{ produto_id: null, descricao: '', quantidade: 1, unidade: 'un', observacao: '', avulso: false }] },
   });
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: 'itens' });
+  const { fields, append, remove, update } = useFieldArray({ control: form.control, name: 'itens' });
 
   const { data: solicitacoes = [], isLoading } = useQuery({
     queryKey: ['solicitacoes_compra', empresaAtiva?.id],
@@ -104,6 +226,15 @@ export default function Solicitacoes() {
     enabled: !!empresaAtiva,
   });
 
+  const { data: produtos = [] } = useQuery({
+    queryKey: ['produtos', empresaAtiva?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('produtos').select('id, nome, unidade, categoria').eq('empresa_id', empresaAtiva!.id).eq('ativo', true).order('nome');
+      return (data || []) as Produto[];
+    },
+    enabled: !!empresaAtiva,
+  });
+
   const { data: profiles = [] } = useQuery({
     queryKey: ['profiles_map'],
     queryFn: async () => { const { data } = await supabase.from('vw_profiles_visiveis').select('id, nome'); return data || []; },
@@ -123,6 +254,7 @@ export default function Solicitacoes() {
       if (error) throw error;
       const itensPayload = values.itens.map((item) => ({
         solicitacao_id: sol.id,
+        produto_id: item.produto_id,
         descricao: item.descricao,
         quantidade: item.quantidade,
         unidade: item.unidade,
@@ -146,12 +278,39 @@ export default function Solicitacoes() {
 
   const handleClose = () => {
     setOpen(false);
-    form.reset({ prioridade: 'media', justificativa: '', observacoes: '', obra_id: '', centro_custo_id: '', itens: [{ descricao: '', quantidade: 1, unidade: 'un', observacao: '' }] });
+    form.reset({ prioridade: 'media', justificativa: '', observacoes: '', obra_id: '', centro_custo_id: '', itens: [{ produto_id: null, descricao: '', quantidade: 1, unidade: 'un', observacao: '', avulso: false }] });
   };
 
   const handleView = async (sol: any) => {
-    const { data: itens } = await supabase.from('solicitacao_itens').select('*').eq('solicitacao_id', sol.id);
+    const { data: itens } = await supabase
+      .from('solicitacao_itens')
+      .select('id, descricao, quantidade, unidade, produto_id, produtos(nome)')
+      .eq('solicitacao_id', sol.id);
     setViewItem({ ...sol, itens: itens || [] });
+  };
+
+  const handleSelectProduto = (index: number, p: Produto) => {
+    const current = form.getValues(`itens.${index}`);
+    update(index, { ...current, produto_id: p.id, descricao: p.nome, unidade: p.unidade, avulso: false });
+  };
+
+  const handleToggleAvulso = (index: number, on: boolean) => {
+    const current = form.getValues(`itens.${index}`);
+    if (on) {
+      update(index, { ...current, avulso: true, produto_id: null });
+    } else {
+      update(index, { ...current, avulso: false, produto_id: null, descricao: '' });
+    }
+  };
+
+  const handleAskCreateProduto = (index: number) => {
+    setNewProdutoForIndex(index);
+    setNewProdutoOpen(true);
+  };
+
+  const handleProdutoCreated = (p: Produto) => {
+    if (newProdutoForIndex !== null) handleSelectProduto(newProdutoForIndex, p);
+    setNewProdutoForIndex(null);
   };
 
   const canApproveCompras = isAdmin || canApprove('compras', 'solicitacoes');
@@ -270,11 +429,24 @@ export default function Solicitacoes() {
                 <h4 className="font-medium mb-2">Itens</h4>
                 <div className="rounded-md border">
                   <Table>
-                    <TableHeader><TableRow><TableHead>Descrição</TableHead><TableHead>Qtd</TableHead><TableHead>Un</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Qtd</TableHead><TableHead>Un</TableHead></TableRow></TableHeader>
                     <TableBody>
-                      {(viewItem.itens || []).map((item: any) => (
-                        <TableRow key={item.id}><TableCell>{item.descricao}</TableCell><TableCell>{item.quantidade}</TableCell><TableCell>{item.unidade}</TableCell></TableRow>
-                      ))}
+                      {(viewItem.itens || []).map((item: any) => {
+                        const nome = item.produtos?.nome || item.descricao;
+                        const isAvulso = !item.produto_id;
+                        return (
+                          <TableRow key={item.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span>{nome}</span>
+                                {isAvulso && <Badge variant="secondary" className="text-[10px]">Avulso</Badge>}
+                              </div>
+                            </TableCell>
+                            <TableCell>{item.quantidade}</TableCell>
+                            <TableCell>{item.unidade}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -296,10 +468,13 @@ export default function Solicitacoes() {
         </DialogContent>
       </Dialog>
 
+      {/* Mini-dialog: novo produto */}
+      <NewProdutoDialog open={newProdutoOpen} onOpenChange={setNewProdutoOpen} onCreated={handleProdutoCreated} />
+
       {/* Create dialog */}
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Nova Solicitação de Compra</DialogTitle><DialogDescription>Preencha os dados e adicione os itens necessários.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Nova Solicitação de Compra</DialogTitle><DialogDescription>Selecione produtos do catálogo ou cadastre na hora.</DialogDescription></DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -363,36 +538,63 @@ export default function Solicitacoes() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-medium">Itens *</h4>
-                  <Button type="button" variant="outline" size="sm" onClick={() => append({ descricao: '', quantidade: 1, unidade: 'un', observacao: '' })}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => append({ produto_id: null, descricao: '', quantidade: 1, unidade: 'un', observacao: '', avulso: false })}>
                     <Plus className="mr-1 h-3 w-3" /> Adicionar Item
                   </Button>
                 </div>
                 <div className="space-y-3">
-                  {fields.map((field, index) => (
-                    <div key={field.id} className="flex gap-2 items-start p-3 rounded-md border">
-                      <div className="flex-1 space-y-2">
-                        <FormField control={form.control} name={`itens.${index}.descricao`} render={({ field }) => (
-                          <FormItem><FormControl><Input placeholder="Descrição do item" {...field} /></FormControl><FormMessage /></FormItem>
-                        )} />
-                        <div className="flex gap-2">
-                          <FormField control={form.control} name={`itens.${index}.quantidade`} render={({ field }) => (
-                            <FormItem className="w-24"><FormControl><Input type="number" step="0.01" min="0.01" placeholder="Qtd" {...field} /></FormControl><FormMessage /></FormItem>
-                          )} />
-                          <FormField control={form.control} name={`itens.${index}.unidade`} render={({ field }) => (
-                            <FormItem className="w-24">
-                              <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                <SelectContent>{UNIDADES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
-                              </Select><FormMessage />
-                            </FormItem>
-                          )} />
+                  {fields.map((field, index) => {
+                    const item = form.watch(`itens.${index}`);
+                    const isAvulso = !!item?.avulso;
+                    return (
+                      <div key={field.id} className="flex gap-2 items-start p-3 rounded-md border">
+                        <div className="flex-1 space-y-2">
+                          {!isAvulso ? (
+                            <FormField control={form.control} name={`itens.${index}.produto_id`} render={() => (
+                              <FormItem>
+                                <ProdutoCombobox
+                                  value={item?.produto_id ?? null}
+                                  produtos={produtos}
+                                  onSelect={(p) => handleSelectProduto(index, p)}
+                                  onAskCreate={() => handleAskCreateProduto(index)}
+                                />
+                                {!item?.produto_id && <p className="text-xs text-muted-foreground mt-1">Selecione um produto do catálogo.</p>}
+                                <FormMessage />
+                              </FormItem>
+                            )} />
+                          ) : (
+                            <FormField control={form.control} name={`itens.${index}.descricao`} render={({ field }) => (
+                              <FormItem>
+                                <FormControl><Input placeholder="Descrição do item avulso" {...field} /></FormControl>
+                                <p className="text-xs text-muted-foreground mt-1">Considere cadastrar no catálogo para reuso.</p>
+                                <FormMessage />
+                              </FormItem>
+                            )} />
+                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <FormField control={form.control} name={`itens.${index}.quantidade`} render={({ field }) => (
+                              <FormItem className="w-24"><FormControl><Input type="number" step="0.01" min="0.01" placeholder="Qtd" {...field} /></FormControl><FormMessage /></FormItem>
+                            )} />
+                            <FormField control={form.control} name={`itens.${index}.unidade`} render={({ field }) => (
+                              <FormItem className="w-24">
+                                <Select onValueChange={field.onChange} value={field.value} disabled={!isAvulso && !!item?.produto_id}>
+                                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                                  <SelectContent>{UNIDADES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
+                                </Select><FormMessage />
+                              </FormItem>
+                            )} />
+                            <div className="flex items-center gap-2 ml-auto">
+                              <Switch id={`avulso-${index}`} checked={isAvulso} onCheckedChange={(v) => handleToggleAvulso(index, v)} />
+                              <Label htmlFor={`avulso-${index}`} className="text-xs text-muted-foreground cursor-pointer">Item avulso</Label>
+                            </div>
+                          </div>
                         </div>
+                        {fields.length > 1 && (
+                          <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        )}
                       </div>
-                      {fields.length > 1 && (
-                        <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {form.formState.errors.itens?.root && <p className="text-sm text-destructive mt-1">{form.formState.errors.itens.root.message}</p>}
               </div>
