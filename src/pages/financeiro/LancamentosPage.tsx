@@ -443,6 +443,22 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
                       <TableCell className="text-sm text-muted-foreground">
                         {ccNome || '—'}
                       </TableCell>
+                      {tipo === 'pagar' && (
+                        <TableCell className="text-sm">
+                          {item.pedido_compra_id ? (
+                            <button
+                              onClick={() => navigate('/compras/pedidos')}
+                              className="text-primary hover:underline inline-flex items-center gap-1"
+                              title="Ver pedido de compra"
+                            >
+                              <Receipt className="h-3 w-3" />
+                              PED-{pedidosMap[item.pedido_compra_id] ?? '?'}
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <NotaFiscalLink path={item.nota_fiscal_url} />
                       </TableCell>
