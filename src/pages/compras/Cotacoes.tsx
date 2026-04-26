@@ -493,7 +493,7 @@ export default function Cotacoes() {
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo Mapa de Cotação</DialogTitle>
+            <DialogTitle>{nomesJaCotados.length > 0 ? 'Adicionar ao Mapa de Cotação' : 'Novo Mapa de Cotação'}</DialogTitle>
             <DialogDescription>Selecione a solicitação e adicione propostas de um ou mais fornecedores.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -508,6 +508,15 @@ export default function Cotacoes() {
                   <FormMessage />
                 </FormItem>
               )} />
+
+              {watchedSolId && nomesJaCotados.length > 0 && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Esta SC já tem {nomesJaCotados.length} {nomesJaCotados.length === 1 ? 'proposta cotada' : 'propostas cotadas'} ({nomesJaCotados.join(', ')}). Você pode adicionar novos fornecedores ao mapa existente — os já cotados ficam indisponíveis abaixo.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {watchedSolId && (
                 <>
