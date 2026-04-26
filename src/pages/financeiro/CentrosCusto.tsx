@@ -16,7 +16,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Search, Paperclip, Eye, Trash2, Upload, FileText } from 'lucide-react';
+import { Plus, Pencil, Search, Paperclip, Eye, Trash2, Upload, FileText, UploadCloud, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSignedUrl } from '@/lib/storage';
 
