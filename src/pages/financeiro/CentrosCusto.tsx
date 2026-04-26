@@ -16,7 +16,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Search, Paperclip, Eye, Trash2, Upload, FileText } from 'lucide-react';
+import { Plus, Pencil, Search, Paperclip, Eye, Trash2, Upload, FileText, UploadCloud, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSignedUrl } from '@/lib/storage';
 
@@ -251,8 +251,37 @@ function AnexosDialog({
   const [descricao, setDescricao] = useState('');
   const [uploading, setUploading] = useState(false);
   const [toDelete, setToDelete] = useState<Anexo | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const reset = () => { setDescricao(''); if (fileRef.current) fileRef.current.value = ''; };
+  const reset = () => {
+    setDescricao('');
+    setSelectedFiles([]);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const addFiles = (incoming: FileList | File[]) => {
+    const arr = Array.from(incoming);
+    const valid: File[] = [];
+    for (const f of arr) {
+      if (f.size > MAX_BYTES) {
+        toast.error(`"${f.name}" excede 10 MB`);
+        continue;
+      }
+      if (!ACCEPTED_MIMES.includes(f.type)) {
+        toast.error(`"${f.name}" tem tipo não suportado`);
+        continue;
+      }
+      valid.push(f);
+    }
+    if (valid.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...valid]);
+    }
+  };
+
+  const removeSelected = (idx: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
@@ -279,7 +308,6 @@ function AnexosDialog({
           descricao: descricao || null,
         });
         if (insErr) {
-          // tenta limpar arquivo em caso de falha no insert
           await supabase.storage.from('centro-custo-anexos').remove([path]);
           throw insErr;
         }
@@ -310,13 +338,12 @@ function AnexosDialog({
   });
 
   const handleFiles = () => {
-    const files = fileRef.current?.files;
-    if (!files || files.length === 0) {
+    if (selectedFiles.length === 0) {
       toast.error('Selecione ao menos um arquivo');
       return;
     }
     setUploading(true);
-    uploadMutation.mutate(Array.from(files));
+    uploadMutation.mutate(selectedFiles);
   };
 
   const handleView = async (anexo: Anexo) => {
@@ -327,6 +354,8 @@ function AnexosDialog({
     }
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const totalBytes = selectedFiles.reduce((sum, f) => sum + f.size, 0);
 
   return (
     <>
@@ -340,24 +369,101 @@ function AnexosDialog({
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="rounded-md border p-3 space-y-3">
-              <div className="text-sm font-medium">Adicionar arquivos</div>
-              <Input
+            <div
+              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(false);
+                if (uploading) return;
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  addFiles(e.dataTransfer.files);
+                }
+              }}
+              className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
+                isDragging ? 'border-primary bg-primary/5' : 'border-border bg-muted/30'
+              } ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
+            >
+              <UploadCloud className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
+              <div className="text-sm font-medium">Arraste arquivos aqui</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                PDF, JPG, PNG ou WEBP — até 10 MB cada
+              </div>
+              <input
                 ref={fileRef}
                 type="file"
                 multiple
                 accept="application/pdf,image/png,image/jpeg,image/webp"
-                disabled={uploading}
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    addFiles(e.target.files);
+                  }
+                  if (fileRef.current) fileRef.current.value = '';
+                }}
               />
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="mt-4"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Escolher arquivos
+              </Button>
+            </div>
+
+            {selectedFiles.length > 0 && (
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  {selectedFiles.length} arquivo(s) selecionado(s) — {formatBytes(totalBytes)}
+                </div>
+                <div className="space-y-1 max-h-[140px] overflow-auto">
+                  {selectedFiles.map((f, idx) => (
+                    <div
+                      key={`${f.name}-${idx}`}
+                      className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5"
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm truncate">{f.name}</div>
+                        <div className="text-xs text-muted-foreground">{formatBytes(f.size)}</div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => removeSelected(idx)}
+                        disabled={uploading}
+                        title="Remover"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
               <Input
                 placeholder="Descrição (opcional, aplicada a todos)"
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
                 disabled={uploading}
               />
-              <Button onClick={handleFiles} disabled={uploading} size="sm">
+              <Button
+                onClick={handleFiles}
+                disabled={uploading || selectedFiles.length === 0}
+                size="sm"
+              >
                 <Upload className="mr-2 h-4 w-4" />
-                {uploading ? 'Enviando...' : 'Enviar'}
+                {uploading ? 'Enviando...' : `Enviar${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ''}`}
               </Button>
             </div>
 
