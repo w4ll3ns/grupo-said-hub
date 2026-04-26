@@ -175,8 +175,8 @@ export default function Cotacoes() {
                     <TableCell>
                       {c.status === 'pendente' && canApproveCompras && (
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: c.id, status: 'aprovada' })} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: c.id, status: 'rejeitada' })} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => rejeitarMutation.mutate(c.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
                         </div>
                       )}
                     </TableCell>
