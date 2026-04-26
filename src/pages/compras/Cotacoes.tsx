@@ -88,6 +88,8 @@ export default function Cotacoes() {
       return data || [];
     },
     enabled: !!empresaAtiva,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
   const { data: fornecedores = [] } = useQuery({
@@ -142,6 +144,7 @@ export default function Cotacoes() {
       qc.invalidateQueries({ queryKey: ['cotacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes'] });
       qc.invalidateQueries({ queryKey: ['solicitacoes_compra'] });
+      qc.invalidateQueries({ queryKey: ['solicitacoes_aprovadas'] });
       toast.success('Cotação criada com itens');
       handleClose();
     },
