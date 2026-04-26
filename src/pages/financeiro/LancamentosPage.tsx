@@ -108,6 +108,9 @@ interface LancamentosPageProps {
 export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPageProps) {
   const { empresaAtiva } = useEmpresa();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const pedidoFilter = tipo === 'pagar' ? searchParams.get('pedido') : null;
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
   const [search, setSearch] = useState('');
