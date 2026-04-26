@@ -183,7 +183,9 @@ export default function Solicitacoes() {
             <SelectItem value="aprovada">Aprovada</SelectItem>
             <SelectItem value="rejeitada">Rejeitada</SelectItem>
             <SelectItem value="cotacao">Em Cotação</SelectItem>
+            <SelectItem value="pedido">Pedido Gerado</SelectItem>
             <SelectItem value="concluida">Concluída</SelectItem>
+            <SelectItem value="cancelada">Cancelada</SelectItem>
           </SelectContent>
         </Select>
         <Button onClick={() => setOpen(true)}><Plus className="mr-2 h-4 w-4" /> Nova Solicitação</Button>
