@@ -344,6 +344,20 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
         </div>
       )}
 
+      {pedidoFilter && (
+        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <Receipt className="h-4 w-4 text-primary" />
+          <span>Filtrando por <strong>PED-{filtroPedidoNumero ?? '?'}</strong></span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7"
+            onClick={() => { searchParams.delete('pedido'); setSearchParams(searchParams); }}
+          >
+            Limpar filtro
+          </Button>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
