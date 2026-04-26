@@ -705,6 +705,21 @@ function AddFornecedorDialog({
   });
   const watchedItens = form.watch('itens');
 
+  const { data: jaCotados = [] } = useQuery({
+    queryKey: ['fornecedores_ja_cotados', scId],
+    queryFn: async () => {
+      if (!scId) return [];
+      const { data } = await supabase
+        .from('cotacoes')
+        .select('fornecedor_id')
+        .eq('solicitacao_id', scId)
+        .eq('status', 'pendente');
+      return data || [];
+    },
+    enabled: !!scId,
+  });
+  const idsJaCotados = useMemo(() => new Set(jaCotados.map((f: any) => f.fornecedor_id)), [jaCotados]);
+
   useEffect(() => {
     if (!scId) { form.reset({ fornecedor_id: '', condicao_pagamento: '', prazo_entrega: '', observacoes: '', itens: [] }); return; }
     (async () => {
