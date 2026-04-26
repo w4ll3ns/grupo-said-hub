@@ -662,7 +662,7 @@ export default function Cotacoes() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
                 <Button type="submit" disabled={saveMutation.isPending || fornecedorFields.length === 0}>
-                  {saveMutation.isPending ? 'Salvando...' : 'Salvar Mapa de Cotação'}
+                  {saveMutation.isPending ? 'Salvando...' : nomesJaCotados.length > 0 ? 'Adicionar ao Mapa' : 'Criar Mapa'}
                 </Button>
               </DialogFooter>
             </form>
