@@ -64,6 +64,7 @@ const prioridadeConfig: Record<string, { label: string; variant: 'default' | 'se
 const formatDate = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; };
 
 export default function Solicitacoes() {
+  const navigate = useNavigate();
   const { empresaAtiva } = useEmpresa();
   const { user } = useAuth();
   const { canApprove, isAdmin } = usePermissions();
@@ -221,6 +222,9 @@ export default function Solicitacoes() {
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => handleView(s)} title="Detalhes"><Eye className="h-4 w-4" /></Button>
+                        {(s.status === 'cotacao' || s.status === 'pedido' || s.status === 'concluida') && (
+                          <Button variant="ghost" size="icon" onClick={() => navigate(`/compras/cotacoes/comparativo/${s.id}`)} title="Comparar cotações"><GitCompare className="h-4 w-4" /></Button>
+                        )}
                         {s.status === 'rascunho' && (
                           <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'pendente' })} title="Enviar para Aprovação"><Send className="h-4 w-4 text-primary" /></Button>
                         )}
