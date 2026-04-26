@@ -21,7 +21,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2, Paperclip, FileText, X } from 'lucide-react';
+import { Plus, Pencil, Search, CalendarIcon, CheckCircle, Trash2, Paperclip, FileText, X, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSignedUrl } from '@/lib/storage';
 
