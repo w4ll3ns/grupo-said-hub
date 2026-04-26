@@ -1,102 +1,134 @@
-## 🎯 Problema confirmado
+# Compras → Financeiro: gerar Conta a Pagar a partir do Pedido
 
-A tela `/compras/solicitacoes` hoje permite digitar **descrição livre** para cada item. Resultado:
-- Catálogo de produtos (`/compras/catalogo`) está **desconectado** do fluxo real.
-- Coluna `solicitacao_itens.produto_id` existe mas é **sempre `null`**.
-- Mesmo material vira textos diferentes em SCs diferentes → cotações ficam incomparáveis e não há histórico de preço por produto.
+## 🎯 Problema
+
+Hoje o módulo de **Compras** termina no Pedido (PED-N). Quando o pedido é entregue, alguém precisa **manualmente** criar um lançamento em **Contas a Pagar** com o mesmo valor, fornecedor e descrição. Isso gera:
+- Retrabalho e risco de divergência (valor pago ≠ valor do pedido).
+- Sem rastreabilidade: olhando uma conta a pagar, não dá pra saber de qual SC/Pedido ela veio.
+- Sem visibilidade no caminho contrário: olhando o Pedido, não dá pra saber se já foi pago.
 
 ## ✅ Decisão
 
-**Item da SC = referência ao catálogo (com fallback para texto livre).**
+**Pedido de Compra gera (1..N) Contas a Pagar atreladas a ele**, com link bidirecional.
 
-- O caso comum (~95%) usa o produto do catálogo: descrição e unidade vêm prontas.
-- O caso de exceção ("preciso de algo que não está cadastrado") permite um item avulso, mas com **CTA para cadastrar no catálogo na hora**, pelo próprio dialog.
+- **1 pedido → 1 lançamento** no caso comum (à vista).
+- **1 pedido → N lançamentos** quando o usuário escolhe parcelar (ex.: 30/60/90).
+- O usuário **decide quando gerar** (ação explícita "Gerar Contas a Pagar" no Pedido) — não automático no `entregue`, porque NF e prazo nem sempre batem com a entrega.
+- **Idempotente**: se já houver contas geradas para o pedido, o botão muda para "Ver contas a pagar" e bloqueia geração duplicada.
 
 ## 🗄️ Backend
 
-**Sem migration nova** — `solicitacao_itens.produto_id` já existe. Apenas vamos passar a preenchê-lo a partir do frontend.
+### Migration
 
-(Se mais adiante quisermos tornar `produto_id` obrigatório, fazemos em um sprint separado depois de migrar os itens legados.)
+1. **Nova coluna em `lancamentos`**:
+   ```sql
+   ALTER TABLE public.lancamentos
+     ADD COLUMN pedido_compra_id uuid NULL;
+   CREATE INDEX idx_lancamentos_pedido_compra_id
+     ON public.lancamentos(pedido_compra_id)
+     WHERE pedido_compra_id IS NOT NULL;
+   ```
+   Sem FK rígida (segue padrão do projeto), mas com índice para os joins.
 
-## 🎨 Mudanças de UX em `Solicitacoes.tsx`
+2. **Nova RPC `gerar_contas_pagar_pedido`**:
+   ```
+   gerar_contas_pagar_pedido(
+     _pedido_id uuid,
+     _parcelas jsonb,           -- [{ valor, data_vencimento, descricao? }, ...]
+     _plano_despesa_id uuid,    -- categoria do plano de contas (obrigatório)
+     _centro_custo_id uuid,     -- opcional
+     _forma_pagamento_id uuid,  -- opcional
+     _conta_bancaria_id uuid,   -- opcional
+     _observacoes text          -- opcional
+   ) RETURNS uuid[]
+   ```
+   Comportamento (security definer):
+   - Valida permissão: `is_admin` OU `user_belongs_to_empresa` + `has_permission('financeiro','contas_pagar','criar')`.
+   - Valida que o pedido existe, pertence à empresa do usuário e **não está cancelado**.
+   - Valida que `SUM(parcelas.valor) = pedido.valor_total` (tolerância 0,01).
+   - Valida que **ainda não existem lançamentos não-cancelados** com `pedido_compra_id = _pedido_id` (idempotência).
+   - Para cada parcela, faz `INSERT` em `lancamentos` com:
+     - `tipo='pagar'`, `status='pendente'`
+     - `descricao` = `"PED-{numero} — {razao_social}" + " (X/N)"` quando >1 parcela.
+     - `valor`, `data_vencimento` (da parcela), `data_emissao = CURRENT_DATE`.
+     - `pedido_compra_id = _pedido_id`, `empresa_id = pedido.empresa_id`.
+     - `plano_despesa_id`, `centro_custo_id`, `forma_pagamento_id`, `conta_bancaria_id`, `observacoes`.
+   - Retorna o array de IDs criados.
 
-### 1. Cada linha de item ganha um seletor de produto
+   *(Mantém a regra do trigger `validate_lancamento_plano`: `plano_despesa_id` permitido porque `tipo='pagar'`.)*
 
-Substituir o `Input` de descrição por um **Combobox** (Command + Popover do shadcn) com:
-- Busca por nome/categoria do catálogo (`produtos` filtrados por `empresa_id` + `ativo=true`).
-- Ao selecionar um produto:
-  - `produto_id` é setado.
-  - `descricao` e `unidade` autopreenchem (a partir do catálogo) e ficam **read-only**.
-  - Quantidade segue editável.
-- Opção no fim da lista: **"+ Cadastrar novo produto…"** → abre um mini-dialog em cima com os campos do catálogo (nome, unidade, categoria), salva via `produtos` e já seleciona o recém-criado naquela linha.
+## 🎨 Frontend
 
-### 2. Modo "item avulso" (escape hatch)
+### `src/pages/compras/Pedidos.tsx`
 
-Toggle pequeno por linha: **"Item não cadastrado"**. Quando ligado:
-- Combobox vira `Input` de descrição livre.
-- `produto_id` fica `null`.
-- Aparece dica: *"Considere cadastrar este item no catálogo."*
+1. **Nova coluna "Financeiro"** na tabela:
+   - Badge **"A gerar"** (cinza) se pedido sem lançamentos.
+   - Badge **"Pendente"** (outline) se há lançamentos mas nem todos `pago`.
+   - Badge **"Pago"** (default verde) se todos lançamentos vinculados estão `pago`.
+   - Não exibido quando `status='cancelado'`.
 
-Mantém compatibilidade com SCs antigas e cobre urgência.
+   Para alimentar isso, query passa a incluir `lancamentos!pedido_compra_id(id,status,valor)`.
 
-### 3. Tela de detalhes (View Dialog) e exibição
+2. **Novo botão de ação por linha**:
+   - Sem lançamentos: ícone `DollarSign` → abre **Dialog "Gerar Contas a Pagar"**.
+   - Com lançamentos: ícone `Receipt` → navega para `/financeiro/contas-pagar?pedido={id}`.
+   - Bloqueado quando `status='cancelado'`.
 
-Onde hoje mostramos `item.descricao`, passar a mostrar:
-- Nome do produto (via join `produto_id → produtos.nome`) **se existir**.
-- Caso contrário, `descricao` (legado / item avulso) com badge cinza "Avulso".
+3. **Novo Dialog `GerarContasPagarDialog`** (subcomponente local):
+   - Cabeçalho: `PED-N`, fornecedor, valor total.
+   - **Modo parcelamento** (radio):
+     - **À vista** → 1 parcela, vencimento default = `data_entrega_prevista` ou hoje + 30d.
+     - **Parcelado** → input "Nº de parcelas" (2..12) + intervalo em dias (default 30) + data da 1ª parcela. Gera lista editável.
+   - **Lista de parcelas editável**: cada linha com `data_vencimento` (DatePicker) e `valor`. Soma destacada no rodapé com indicador verde se = total / vermelho se diverge.
+   - **Campos abaixo**: `plano_despesa_id` obrigatório (Select); opcionais: `centro_custo_id`, `forma_pagamento_id`, `conta_bancaria_id`, `observacoes`.
+   - Botão "Gerar" chama `supabase.rpc('gerar_contas_pagar_pedido', {...})`.
+   - Em sucesso: toast "N contas a pagar geradas", invalida `['pedidos_compra']` e `['lancamentos']`, fecha dialog.
 
-Isso vale também para:
-- `Solicitacoes.tsx` (View Dialog)
-- `Cotacoes.tsx` (Mapa de Cotação — tabela de itens por fornecedor)
-- `CotacoesComparativo.tsx` (linhas do comparativo)
+### `src/pages/financeiro/LancamentosPage.tsx` (somente quando `tipo='pagar'`)
 
-### 4. Schema do form (Zod)
+1. **Filtro por query param** `?pedido={id}`: aplica `eq('pedido_compra_id', id)` e mostra chip removível: *"Filtrando por PED-N — limpar"*.
 
-```ts
-const itemSchema = z.object({
-  produto_id: z.string().uuid().nullable(),
-  descricao: z.string().min(1, 'Descrição é obrigatória'),
-  quantidade: z.coerce.number().positive('Qtd > 0'),
-  unidade: z.string().min(1),
-  observacao: z.string().optional().or(z.literal('')),
-}).refine(
-  (v) => v.produto_id !== null || v.descricao.trim().length > 0,
-  { message: 'Selecione um produto do catálogo ou marque como item avulso' }
-);
-```
+2. **Coluna "Origem"**: se `pedido_compra_id` existe, mostra link `PED-N` que navega para `/compras/pedidos`. Em Receber fica oculta.
 
-### 5. Mutation `saveMutation`
+3. **Ao editar/excluir** lançamento gerado por pedido: aviso *"Este lançamento foi gerado a partir do PED-N. Alterações não afetam o pedido."* (informativo, não bloqueia).
 
-Adicionar `produto_id` no payload de `solicitacao_itens.insert`:
+### Tipos
 
-```ts
-const itensPayload = values.itens.map((item) => ({
-  solicitacao_id: sol.id,
-  produto_id: item.produto_id,           // ← novo
-  descricao: item.descricao,
-  quantidade: item.quantidade,
-  unidade: item.unidade,
-  observacao: item.observacao || null,
-}));
-```
+`src/integrations/supabase/types.ts` é regenerado após a migration; não editamos manualmente.
 
-### 6. Cache invalidation
+## 🔁 Fluxos
 
-Quando o usuário cadastra um produto novo a partir do mini-dialog dentro da SC, invalidar `['produtos', empresaAtiva.id]` para a lista atualizar imediatamente em todas as telas.
+**À vista:**
+1. PED-3 entregue, R$ 12.000.
+2. Clicar `DollarSign` → dialog abre.
+3. Mantém "À vista", define vencimento, escolhe categoria "Insumos > Cimento".
+4. "Gerar" → 1 lançamento criado.
+5. Coluna "Financeiro" do PED-3 vira **Pendente**.
+6. Baixar em Contas a Pagar → PED-3 vira **Pago**.
+
+**Parcelado:**
+1. Mesmo PED-3, "Parcelado", 3x de 30 em 30 dias.
+2. Lista mostra 3x R$ 4.000 — soma OK.
+3. Gera → `"PED-3 — Fornecedor X (1/3)"`, `(2/3)`, `(3/3)`.
+4. PED-3 fica **Pendente** até todos pagos.
+
+**Idempotência:**
+- Re-tentar gerar no mesmo pedido → RPC bloqueia. UI já trocou ícone para `Receipt` antes disso.
 
 ## 📌 O que **não** muda
 
-- Schema do banco (nenhuma migration).
-- RPCs do módulo de compras.
-- Tela `/compras/catalogo` continua sendo o cadastro mestre.
-- Cotações e Pedidos continuam ligados a `solicitacao_item_id` (não precisam saber de `produto_id` agora — o join é só para exibição).
+- Schema de `pedidos_compra`, `cotacoes`, `solicitacoes_compra`.
+- Triggers existentes.
+- `LancamentosPage` para `tipo='receber'`.
+- Geração permanece **manual / por ação** — sem trigger automático em `pedidos_compra.status`.
 
 ## 🧪 Verificação
 
-1. Em `/compras/solicitacoes`, clicar **Nova Solicitação**.
-2. Numa linha de item, abrir o combobox → ver produtos do catálogo da empresa ativa.
-3. Selecionar um produto → descrição e unidade preenchidas e travadas.
-4. Adicionar segunda linha, clicar **"+ Cadastrar novo produto"** → criar "Areia média" → ver que aparece selecionada na linha.
-5. Adicionar terceira linha, marcar **"Item não cadastrado"** → digitar descrição livre.
-6. Salvar → conferir no detalhe da SC que os 3 itens aparecem corretamente (2 com nome do catálogo, 1 com badge "Avulso").
-7. `npx tsc --noEmit` limpo.
+1. Em `/compras/pedidos`, clicar `DollarSign` em um PED → dialog abre com valor preenchido.
+2. À vista, gerar → toast OK, badge "Pendente" na coluna Financeiro.
+3. Em `/financeiro/contas-pagar`, ver lançamento com origem `PED-N`.
+4. Voltar ao pedido, clicar `Receipt` → cai em `/financeiro/contas-pagar?pedido=...` filtrado.
+5. Baixar como pago → badge do pedido muda pra **Pago**.
+6. Tentar gerar de novo → RPC bloqueia.
+7. 3 parcelas com soma divergente → botão "Gerar" desabilitado.
+8. `npx tsc --noEmit` limpo.
