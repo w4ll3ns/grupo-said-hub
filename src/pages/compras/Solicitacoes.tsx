@@ -389,13 +389,13 @@ export default function Solicitacoes() {
                         {s.status === 'rascunho' && (
                           <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'pendente' })} title="Enviar para Aprovação"><Send className="h-4 w-4 text-primary" /></Button>
                         )}
-                        {s.status === 'pendente' && canApproveCompras && s.solicitante_id !== user?.id && (
+                        {s.status === 'pendente' && canApproveCompras && (s.solicitante_id !== user?.id || isAdmin) && (
                           <>
                             <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'aprovada' })} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
                             <Button variant="ghost" size="icon" onClick={() => setRejectDialog(s.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
                           </>
                         )}
-                        {s.status === 'pendente' && canApproveCompras && s.solicitante_id === user?.id && (
+                        {s.status === 'pendente' && canApproveCompras && s.solicitante_id === user?.id && !isAdmin && (
                           <span className="inline-flex h-9 w-9 items-center justify-center opacity-50 cursor-not-allowed" title="Você não pode aprovar sua própria solicitação">
                             <CheckCircle className="h-4 w-4 text-muted-foreground" />
                           </span>
