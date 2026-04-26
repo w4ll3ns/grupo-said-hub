@@ -18,7 +18,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Plus, Search, CalendarIcon, Send, CheckCircle, XCircle, Eye, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Search, CalendarIcon, Send, CheckCircle, XCircle, Eye, Trash2, GitCompare } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +64,7 @@ const prioridadeConfig: Record<string, { label: string; variant: 'default' | 'se
 const formatDate = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; };
 
 export default function Solicitacoes() {
+  const navigate = useNavigate();
   const { empresaAtiva } = useEmpresa();
   const { user } = useAuth();
   const { canApprove, isAdmin } = usePermissions();
@@ -181,7 +183,9 @@ export default function Solicitacoes() {
             <SelectItem value="aprovada">Aprovada</SelectItem>
             <SelectItem value="rejeitada">Rejeitada</SelectItem>
             <SelectItem value="cotacao">Em Cotação</SelectItem>
+            <SelectItem value="pedido">Pedido Gerado</SelectItem>
             <SelectItem value="concluida">Concluída</SelectItem>
+            <SelectItem value="cancelada">Cancelada</SelectItem>
           </SelectContent>
         </Select>
         <Button onClick={() => setOpen(true)}><Plus className="mr-2 h-4 w-4" /> Nova Solicitação</Button>
@@ -220,6 +224,9 @@ export default function Solicitacoes() {
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => handleView(s)} title="Detalhes"><Eye className="h-4 w-4" /></Button>
+                        {(s.status === 'cotacao' || s.status === 'pedido' || s.status === 'concluida') && (
+                          <Button variant="ghost" size="icon" onClick={() => navigate(`/compras/cotacoes/comparativo/${s.id}`)} title="Comparar cotações"><GitCompare className="h-4 w-4" /></Button>
+                        )}
                         {s.status === 'rascunho' && (
                           <Button variant="ghost" size="icon" onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'pendente' })} title="Enviar para Aprovação"><Send className="h-4 w-4 text-primary" /></Button>
                         )}
