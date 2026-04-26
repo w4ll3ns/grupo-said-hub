@@ -279,8 +279,35 @@ export default function Cotacoes() {
 
   const filtered = cotacoes.filter((c: any) =>
     `COT-${c.numero}`.toLowerCase().includes(search.toLowerCase()) ||
-    (c.fornecedores?.razao_social || '').toLowerCase().includes(search.toLowerCase())
+    (c.fornecedores?.razao_social || '').toLowerCase().includes(search.toLowerCase()) ||
+    `SC-${c.solicitacoes_compra?.numero}`.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Agrupa cotações por SC para visão "mapa"
+  const mapasPorSC = useMemo(() => {
+    const groups = new Map<string, { sc_id: string; sc_numero: number; cotacoes: any[]; menorTotal: number; temPedido: boolean }>();
+    filtered.forEach((c: any) => {
+      const key = c.solicitacao_id;
+      if (!key) return;
+      let g = groups.get(key);
+      if (!g) {
+        g = { sc_id: key, sc_numero: c.solicitacoes_compra?.numero ?? 0, cotacoes: [], menorTotal: Infinity, temPedido: false };
+        groups.set(key, g);
+      }
+      g.cotacoes.push(c);
+      const total = Number(c.valor_total) || 0;
+      if ((c.cotacao_itens || []).length > 0 && total > 0 && total < g.menorTotal) g.menorTotal = total;
+      if ((c.pedidos_compra || []).some((p: any) => p.status !== 'cancelado')) g.temPedido = true;
+    });
+    return Array.from(groups.values()).sort((a, b) => b.sc_numero - a.sc_numero);
+  }, [filtered]);
+
+  const [expandedSCs, setExpandedSCs] = useState<Set<string>>(new Set());
+  const toggleSC = (id: string) => setExpandedSCs((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   // Resumo do mapa em construção
   const watchedFornecedores = useWatch({ control: form.control, name: 'fornecedores' }) || [];
@@ -290,6 +317,23 @@ export default function Cotacoes() {
   const totaisFiltrados = totaisPorFornecedor.filter(t => t > 0);
   const menorTotal = totaisFiltrados.length ? Math.min(...totaisFiltrados) : 0;
   const maiorTotal = totaisFiltrados.length ? Math.max(...totaisFiltrados) : 0;
+
+  // Fornecedores que JÁ têm cotação pendente para a SC selecionada (evita duplicidade)
+  const { data: fornecedoresJaCotados = [] } = useQuery({
+    queryKey: ['fornecedores_ja_cotados', watchedSolId],
+    queryFn: async () => {
+      if (!watchedSolId) return [];
+      const { data } = await supabase
+        .from('cotacoes')
+        .select('fornecedor_id, fornecedores(razao_social)')
+        .eq('solicitacao_id', watchedSolId)
+        .eq('status', 'pendente');
+      return data || [];
+    },
+    enabled: !!watchedSolId,
+  });
+  const idsJaCotados = useMemo(() => new Set(fornecedoresJaCotados.map((f: any) => f.fornecedor_id)), [fornecedoresJaCotados]);
+  const nomesJaCotados = fornecedoresJaCotados.map((f: any) => f.fornecedores?.razao_social).filter(Boolean);
 
   return (
     <div className="space-y-6">
