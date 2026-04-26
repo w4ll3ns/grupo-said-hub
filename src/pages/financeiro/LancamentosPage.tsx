@@ -131,19 +131,39 @@ export default function LancamentosPage({ tipo, title, subtitle }: LancamentosPa
   });
 
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ['lancamentos', empresaAtiva?.id, tipo],
+    queryKey: ['lancamentos', empresaAtiva?.id, tipo, pedidoFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('lancamentos')
         .select('*')
         .eq('empresa_id', empresaAtiva!.id)
         .eq('tipo', tipo)
         .order('data_vencimento', { ascending: false });
+      if (pedidoFilter) q = q.eq('pedido_compra_id', pedidoFilter);
+      const { data, error } = await q;
       if (error) throw error;
       return data as unknown as Lancamento[];
     },
     enabled: !!empresaAtiva,
   });
+
+  // Mapa pedido_compra_id -> numero, para exibir badge "PED-N"
+  const { data: pedidosMap = {} } = useQuery({
+    queryKey: ['pedidos_numeros', empresaAtiva?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('pedidos_compra')
+        .select('id, numero')
+        .eq('empresa_id', empresaAtiva!.id);
+      const map: Record<string, number> = {};
+      (data || []).forEach((p: any) => { map[p.id] = p.numero; });
+      return map;
+    },
+    enabled: !!empresaAtiva && tipo === 'pagar',
+  });
+
+  // Info do pedido em filtro ativo
+  const filtroPedidoNumero = pedidoFilter ? pedidosMap[pedidoFilter] : undefined;
 
   const { data: contasBancarias = [] } = useQuery({
     queryKey: ['contas_bancarias', empresaAtiva?.id],
