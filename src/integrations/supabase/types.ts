@@ -592,6 +592,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "lancamentos_pedido_compra_id_fkey"
+            columns: ["pedido_compra_id"]
+            isOneToOne: false
+            referencedRelation: "pedidos_compra"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "lancamentos_plano_despesa_id_fkey"
             columns: ["plano_despesa_id"]
             isOneToOne: false
