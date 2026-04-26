@@ -352,71 +352,100 @@ export default function Cotacoes() {
 
       {isLoading ? (
         <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>
+      ) : mapasPorSC.length === 0 ? (
+        <div className="rounded-md border p-8 text-center text-muted-foreground">Nenhum mapa de cotação encontrado</div>
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Número</TableHead>
-                <TableHead>Solicitação</TableHead>
-                <TableHead>Fornecedor</TableHead>
-                <TableHead>Itens</TableHead>
-                <TableHead>Valor Total</TableHead>
-                <TableHead>Validade</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Pedido</TableHead>
-                <TableHead className="w-[200px]">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nenhuma cotação encontrada</TableCell></TableRow>
-              ) : filtered.map((c: any) => {
-                const sc = statusConfig[c.status] || statusConfig.pendente;
-                const itensCount = (c.cotacao_itens || []).length;
-                const pedido = (c.pedidos_compra || []).find((p: any) => p.status !== 'cancelado');
-                const scTemPedido = filtered.some((x: any) =>
-                  x.solicitacao_id === c.solicitacao_id &&
-                  (x.pedidos_compra || []).some((p: any) => p.status !== 'cancelado')
-                );
-                return (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-medium">COT-{c.numero}</TableCell>
-                    <TableCell>
-                      <button
-                        onClick={() => c.solicitacao_id && navigate(`/compras/cotacoes/comparativo/${c.solicitacao_id}`)}
-                        className="text-primary hover:underline"
-                        title="Comparar cotações desta solicitação"
-                      >SC-{c.solicitacoes_compra?.numero}</button>
-                    </TableCell>
-                    <TableCell>{c.fornecedores?.razao_social}</TableCell>
-                    <TableCell>{itensCount > 0 ? `${itensCount} ${itensCount === 1 ? 'item' : 'itens'}` : '—'}</TableCell>
-                    <TableCell>{formatBRL(c.valor_total)}</TableCell>
-                    <TableCell>{c.data_validade ? formatDate(c.data_validade) : '—'}</TableCell>
-                    <TableCell><Badge variant={sc.variant}>{sc.label}</Badge></TableCell>
-                    <TableCell>{pedido ? <Badge variant="default">PED-{pedido.numero}</Badge> : '—'}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {itensCount > 0 && (
-                          <Button variant="ghost" size="icon" onClick={() => openItens(c)} title="Ver itens"><Eye className="h-4 w-4" /></Button>
+        <div className="space-y-3">
+          {mapasPorSC.map((grupo) => {
+            const isOpen = expandedSCs.has(grupo.sc_id);
+            const fornecedoresCount = grupo.cotacoes.length;
+            const aprovada = grupo.cotacoes.find((c: any) => c.status === 'aprovada');
+            const statusLabel = grupo.temPedido
+              ? 'Pedido emitido'
+              : aprovada ? 'Cotação aprovada' : 'Em cotação';
+            const statusColor = grupo.temPedido || aprovada ? 'default' : 'outline';
+            return (
+              <Collapsible key={grupo.sc_id} open={isOpen} onOpenChange={() => toggleSC(grupo.sc_id)}>
+                <div className="rounded-md border bg-card">
+                  <CollapsibleTrigger className="w-full p-4 flex items-center gap-3 hover:bg-muted/50 transition-colors text-left">
+                    {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      <span className="font-semibold text-base">SC-{grupo.sc_numero}</span>
+                      <span className="text-muted-foreground">
+                        {fornecedoresCount} {fornecedoresCount === 1 ? 'fornecedor cotado' : 'fornecedores cotados'}
+                      </span>
+                      {grupo.menorTotal !== Infinity && (
+                        <span className="text-muted-foreground">
+                          Menor: <strong className="text-foreground">{formatBRL(grupo.menorTotal)}</strong>
+                        </span>
+                      )}
+                      <Badge variant={statusColor as any}>{statusLabel}</Badge>
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="border-t">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Cotação</TableHead>
+                            <TableHead>Fornecedor</TableHead>
+                            <TableHead>Itens</TableHead>
+                            <TableHead>Valor Total</TableHead>
+                            <TableHead>Validade</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Pedido</TableHead>
+                            <TableHead className="w-[180px]">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {grupo.cotacoes.map((c: any) => {
+                            const sc = statusConfig[c.status] || statusConfig.pendente;
+                            const itensCount = (c.cotacao_itens || []).length;
+                            const pedido = (c.pedidos_compra || []).find((p: any) => p.status !== 'cancelado');
+                            return (
+                              <TableRow key={c.id}>
+                                <TableCell className="font-medium">COT-{c.numero}</TableCell>
+                                <TableCell>{c.fornecedores?.razao_social}</TableCell>
+                                <TableCell>{itensCount > 0 ? `${itensCount} ${itensCount === 1 ? 'item' : 'itens'}` : '—'}</TableCell>
+                                <TableCell>{formatBRL(c.valor_total)}</TableCell>
+                                <TableCell>{c.data_validade ? formatDate(c.data_validade) : '—'}</TableCell>
+                                <TableCell><Badge variant={sc.variant}>{sc.label}</Badge></TableCell>
+                                <TableCell>{pedido ? <Badge variant="default">PED-{pedido.numero}</Badge> : '—'}</TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1">
+                                    {itensCount > 0 && (
+                                      <Button variant="ghost" size="icon" onClick={() => openItens(c)} title="Ver itens"><Eye className="h-4 w-4" /></Button>
+                                    )}
+                                    {c.status === 'pendente' && canApproveCompras && !pedido && (
+                                      <>
+                                        <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
+                                        <Button variant="ghost" size="icon" onClick={() => rejeitarMutation.mutate(c.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                      <div className="p-3 flex flex-wrap gap-2 border-t bg-muted/20">
+                        {!grupo.temPedido && (
+                          <Button variant="outline" size="sm" onClick={() => setAddFornecedorScId(grupo.sc_id)}>
+                            <UserPlus className="mr-2 h-4 w-4" /> Adicionar fornecedor ao mapa
+                          </Button>
                         )}
-                        <Button variant="ghost" size="icon" onClick={() => navigate(`/compras/cotacoes/comparativo/${c.solicitacao_id}`)} title="Comparativo"><GitCompare className="h-4 w-4" /></Button>
-                        {!scTemPedido && (
-                          <Button variant="ghost" size="icon" onClick={() => setAddFornecedorScId(c.solicitacao_id)} title="Adicionar outro fornecedor a esta SC"><UserPlus className="h-4 w-4" /></Button>
-                        )}
-                        {c.status === 'pendente' && canApproveCompras && !pedido && (
-                          <>
-                            <Button variant="ghost" size="icon" onClick={() => aprovarMutation.mutate(c.id)} title="Aprovar"><CheckCircle className="h-4 w-4 text-primary" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => rejeitarMutation.mutate(c.id)} title="Rejeitar"><XCircle className="h-4 w-4 text-destructive" /></Button>
-                          </>
-                        )}
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/compras/cotacoes/comparativo/${grupo.sc_id}`)}>
+                          <GitCompare className="mr-2 h-4 w-4" /> Abrir mapa comparativo
+                        </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            );
+          })}
         </div>
       )}
 
